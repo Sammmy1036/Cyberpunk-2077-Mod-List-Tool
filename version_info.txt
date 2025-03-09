@@ -1,0 +1,30 @@
+# UTF-8
+#
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,3
+ PRODUCTVERSION 1,0,0,3
+ FILEFLAGSMASK 0x3f
+ FILEFLAGS 0x0
+ FILEOS 0x40004
+ FILETYPE 0x1
+ FILESUBTYPE 0x0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Nexus Mod Author Sammmy1036"
+            VALUE "FileDescription", "Cyberpunk 2077 Mod List Tool"
+            VALUE "FileVersion", "1.0.0.3"
+            VALUE "InternalName", "Cyberpunk 2077 Mod List Tool"
+            VALUE "LegalCopyright", "Copyright © 2025 Sammmy1036"
+            VALUE "OriginalFilename", "Cyberpunk 2077 Mod List Tool.exe"
+            VALUE "ProductName", "Cyberpunk 2077 Mod List Tool"
+            VALUE "ProductVersion", "1.0.0.3"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
