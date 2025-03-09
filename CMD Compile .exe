@@ -1,0 +1,2 @@
+@echo off
+start cmd /k pyinstaller Cyberpunk2077ModListTool1.0.0.3.spec
