@@ -142,20 +142,6 @@ def toggle_mod_buttons():
         view_mod_list_button.place(relx=0.5, y=600, anchor="center")
         more_options_button.config(text="Hide Options")
 
-    # Add hover effects to main window buttons
-    start_button.bind("<Enter>", lambda e: start_button.config(bg="#D4D400", fg="black"))  # Lighter yellow
-    start_button.bind("<Leave>", lambda e: start_button.config(bg="#FEFE00", fg="black"))
-    include_logs_checkbox.bind("<Enter>", lambda e: include_logs_checkbox.config(bg="#1A1A1A", fg="white"))  # Darker gray
-    include_logs_checkbox.bind("<Leave>", lambda e: include_logs_checkbox.config(bg="#000000", fg="white"))
-    more_options_button.bind("<Enter>", lambda e: more_options_button.config(bg="#E6E600", fg="black"))  # Lighter yellow
-    more_options_button.bind("<Leave>", lambda e: more_options_button.config(bg="#FFFF00", fg="black"))
-    disable_button.bind("<Enter>", lambda e: disable_button.config(bg="#CC0000", fg="white"))  # Darker red
-    disable_button.bind("<Leave>", lambda e: disable_button.config(bg="#FF0000", fg="white"))
-    enable_button.bind("<Enter>", lambda e: enable_button.config(bg="#00CC00", fg="black"))  # Darker green
-    enable_button.bind("<Leave>", lambda e: enable_button.config(bg="#00FF00", fg="black"))
-    view_mod_list_button.bind("<Enter>", lambda e: view_mod_list_button.config(bg="#E6E600", fg="black"))  # Lighter yellow
-    view_mod_list_button.bind("<Leave>", lambda e: view_mod_list_button.config(bg="#FFFF00", fg="black"))
-
 def disable_all_mods():
     """Disable all mods by moving them to a 'Temporarily Disabled Mods' folder."""
     if is_game_running():
@@ -190,7 +176,7 @@ def disable_all_mods():
     update_mod_count_label()
 
 def enable_all_mods():
-    """Enable all mods by moving them back from 'Temporarily Disabled Mods' to original locations and remove the folder."""
+    """Enable all mods by moving them back from 'Temporarily Disabled Mods' to original locations."""
     if is_game_running():
         messagebox.showwarning("Game Running", "Cannot modify mods while Cyberpunk 2077 is running!")
         return
@@ -284,6 +270,15 @@ def view_mod_list():
     mod_window.resizable(False, False)
     mod_window.configure(bg="#000000")
     mod_window.protocol("WM_DELETE_WINDOW", lambda: on_mod_window_close(mod_window))  # Set close handler
+
+    # Center the window on the screen
+    screen_width = mod_window.winfo_screenwidth()
+    screen_height = mod_window.winfo_screenheight()
+    window_width = 800
+    window_height = 600
+    x = (screen_width - window_width) // 2
+    y = (screen_height - window_height) // 2
+    mod_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
     # Set the same icon as the main window
     if os.path.exists(ICON_PATH):
@@ -490,7 +485,11 @@ def run_script():
         game_version_label.place_forget()
         log_errors_label.place_forget()
         pl_dlc_label.place_forget()
+        include_logs_checkbox.place_forget()  # Hide checkbox if not in correct location
         return False
+
+    # Show the checkbox if in the correct location
+    include_logs_checkbox.place(relx=0.5, y=450, anchor="center")
 
     now = datetime.datetime.now()
     archivemods = os.path.join("archive", "pc", "mod")
@@ -687,7 +686,7 @@ include_logs_var = tk.BooleanVar(value=True)
 include_logs_checkbox = tk.Checkbutton(window, text="Include Logs", variable=include_logs_var,
                                        font=("Arial", 12), bg="#000000", fg="white", selectcolor="#333333",
                                        activebackground="#000000", activeforeground="white")
-include_logs_checkbox.place(relx=0.5, y=450, anchor="center")
+# Placement is handled dynamically below
 
 more_options_button = tk.Button(window, text="More Options", command=toggle_mod_buttons, font=("Arial", 12), width=12,
                                 bg="#FFFF00", fg="black")
@@ -738,12 +737,13 @@ game_version_label = tk.Label(window, text="Game Version: Unknown", font=("Arial
 log_errors_label = tk.Label(window, text="Log Errors Detected: No", font=("Arial", 10), fg="white", bg="#000000")
 pl_dlc_label = tk.Label(window, text="Phantom Liberty DLC: No", font=("Arial", 10), fg="white", bg="#000000")
 
-# Place labels only if in correct location on startup
+# Place labels and checkbox only if in correct location on startup
 if os.path.exists(os.path.join(current_dir, "archive")):
     mod_count_label.place(x=10, y=760)
     game_version_label.place(x=10, y=780)
     log_errors_label.place(x=430, y=760)
     pl_dlc_label.place(x=430, y=780)
+    include_logs_checkbox.place(relx=0.5, y=450, anchor="center")  # Place checkbox here
     mod_count_label.config(text=f"Total Mods: {initial_mod_count}")
     game_version_label.config(text=f"Game Version: {initial_game_version}")
     log_errors_label.config(text=f"Log Errors Detected: {'Yes' if initial_log_errors else 'No'}")
