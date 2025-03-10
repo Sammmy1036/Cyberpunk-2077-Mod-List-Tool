@@ -46,8 +46,6 @@ ________________________________________________________________________________
 
 Windows Defender and other Antivirus programs may falsely flag this as a potentially unwanted program or virus. It's 100% safe and most likely being flagged due to not being digitally signed by an actual publisher/developer. This application has already been submitted to be whitelisted from Microsoft so it should work itself out with time. 
 
-If you do not feel comfortable downloading and installing, you can make a very cut down version of this yourself!
-
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 ﻿
