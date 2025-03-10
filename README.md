@@ -24,6 +24,8 @@ Mod Backup / Preset Exporting feature.
 
 Additional elements which were displayed in the .txt output file are now displayed in the GUI when launching the application, such as (Number of installed mods, Game Version, Log Error Detection, and Phantom Liberty DLC info). 
 
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+
 **HOW TO USE**
 
 Step 1: Place application in your Cyberpunk 2077 game directory. 
