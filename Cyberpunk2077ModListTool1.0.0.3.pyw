@@ -278,16 +278,16 @@ def view_mod_list():
     # Create mod list window
     mod_window = tk.Toplevel(window)
     mod_window.title("View Mod List")
-    mod_window.geometry("800x600")
-    mod_window.resizable(False, False)
+    mod_window.geometry("1100x800")
+    mod_window.resizable(True, True)
     mod_window.configure(bg="#000000")
     mod_window.protocol("WM_DELETE_WINDOW", lambda: on_mod_window_close(mod_window))  # Set close handler
 
     # Center the window on the screen
     screen_width = mod_window.winfo_screenwidth()
     screen_height = mod_window.winfo_screenheight()
-    window_width = 800
-    window_height = 600
+    window_width = 1100
+    window_height = 800
     x = (screen_width - window_width) // 2
     y = (screen_height - window_height) // 2
     mod_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
@@ -334,8 +334,8 @@ def view_mod_list():
     enabled_scrollbar = tk.Scrollbar(enabled_list_frame, orient=tk.VERTICAL)
     enabled_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-    # Create the listbox and configure it with the scrollbar
-    enabled_listbox = tk.Listbox(enabled_list_frame, font=("Arial", 10), width=40, bg="#333333", fg="white", selectmode=tk.MULTIPLE)
+    # Create the listbox and configure it with the scrollbar (changed to tk.EXTENDED)
+    enabled_listbox = tk.Listbox(enabled_list_frame, font=("Arial", 10), width=40, bg="#333333", fg="white", selectmode=tk.EXTENDED)
     enabled_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     # Bind the scrollbar to the listbox
@@ -353,8 +353,8 @@ def view_mod_list():
     disabled_scrollbar = tk.Scrollbar(disabled_list_frame, orient=tk.VERTICAL)
     disabled_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-    # Create the listbox and configure it with the scrollbar
-    disabled_listbox = tk.Listbox(disabled_list_frame, font=("Arial", 10), width=40, bg="#333333", fg="white", selectmode=tk.MULTIPLE)
+    # Create the listbox and configure it with the scrollbar (changed to tk.EXTENDED)
+    disabled_listbox = tk.Listbox(disabled_list_frame, font=("Arial", 10), width=40, bg="#333333", fg="white", selectmode=tk.EXTENDED)
     disabled_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     # Bind the scrollbar to the listbox
