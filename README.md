@@ -33,7 +33,7 @@ Windows Defender and other Antivirus programs may falsely flag this as a potenti
 If you do not feel comfortable downloading and installing, you can make a very cut down version of this yourself!
 
 
-**PLANNED FEATURES **
+**PLANNED FEATURES**
 
 Optional checkbox to include or not include logs with mod list.
 
