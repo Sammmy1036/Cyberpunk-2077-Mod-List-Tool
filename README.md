@@ -52,9 +52,9 @@ Selecting "Enable All Mods" will restore all mods inside of the "Temporarily Dis
 
 Opens a window with a list of all Mods currently installed in your game.
 
-Allows manually clicking or selecting any Mod installed in either the Enabled Mods or Disabled Mods List for your game. 
+Allows manual selection of each individual file of any Mods installed in your game or currently disabled and in the "Temporarily Disabled Mods" folder. 
 
-For Example a mod titled MyMod.archive could be installed in archive/pc/mod and it will show up in the Enabled Mods side on the left. Clicking it will highlight it blue and you can select Disable Selected and it will Disable the mod putting it inside the "Temporarily Disabled Mods" folder locatied in your Cyberpunk 2077 Directory. 
+For Example a mod titled MyMod.archive is already installed in archive/pc/mod it will show up in the Enabled Mods side on the left. Clicking it will highlight it blue and you can select Disable Selected and it will Disable the mod putting it inside the "Temporarily Disabled Mods" folder locatied in your Cyberpunk 2077 Directory. 
 
 **_More Options Feature - Export Mod Preset_**
 
