@@ -26,13 +26,15 @@ Additional elements which were displayed in the .txt output file are now display
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**Installation**
+**INSTALLATION**
 
 Place application in your Cyberpunk 2077 game directory (e.g. C:\Steam\steamapps\common\Cyberpunk 2077). 
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**How to Compile Mod List/Logs**
+**HOW TO USE**
+
+**_Compiling Mod/Log Lists_**
 
 Step 1: Double click the application "Cyberpunk 2077 Mod List Tool.exe".
 
@@ -40,15 +42,13 @@ Step 2: If you would like the list to not include log files deselect "Include Lo
 
 Step 3: Click 'Start'. The application should have generated a text file called "Cyberpunk 2077 Mod List.txt" located in your Cyberpunk 2077 directory.
 
-**More Options Features**
-
-**_Enable/Disable All Mods_**
+**_More Options Feature - Enable/Disable All Mods_**
 
 Selecting "Disable All Mods" creates a folder in your Cyberpunk 2077 Directory called "Temporarily Disabled Mods" and moves all installed mods to this folder. 
 
 Selecting "Enable All Mods" will restore all mods inside of the "Temporarily Disabled Mods" folder and delete this folder when there is no longer any mods inside. 
 
-**_View Mod List_**
+**_More Options Feature - View Mod List_**
 
 Opens a window with a list of all Mods currently installed in your game.
 
@@ -56,7 +56,7 @@ Allows manually clicking or selecting any Mod installed in either the Enabled Mo
 
 For Example a mod titled MyMod.archive could be installed in archive/pc/mod and it will show up in the Enabled Mods side on the left. Clicking it will highlight it blue and you can select Disable Selected and it will Disable the mod putting it inside the "Temporarily Disabled Mods" folder locatied in your Cyberpunk 2077 Directory. 
 
-**_Export Mod Preset_**
+**_More Options Feature - Export Mod Preset_**
 
 Clicking "Export Mod Preset" will open a window allowing selection of any of your games specific mod folders. 
 
