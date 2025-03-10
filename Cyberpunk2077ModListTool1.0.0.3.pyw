@@ -3,11 +3,12 @@ import os
 import sys
 import webbrowser
 import datetime
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 import tempfile
 import shutil
-import time  # Added for delay
-import psutil  # Added for process checking
+import time
+import psutil
+import zipfile
 
 try:
     import win32api
@@ -130,16 +131,27 @@ def is_game_running():
     return _game_running_cache
 
 def toggle_mod_buttons():
-    """Toggle visibility of mod management buttons."""
+    """Toggle visibility of mod management buttons with side-by-side Disable/Enable and spaced others."""
     if disable_button.winfo_viewable():
         disable_button.place_forget()
         enable_button.place_forget()
         view_mod_list_button.place_forget()
+        export_mod_preset_button.place_forget()  # Hide export button
         more_options_button.config(text="More Options")
     else:
+        # Place Disable All Mods and Enable All Mods side by side at the same y level
         disable_button.place(x=120, y=550)
         enable_button.place(x=330, y=550)
-        view_mod_list_button.place(relx=0.5, y=600, anchor="center")
+
+        # Define the vertical range and spacing for the remaining two buttons
+        start_y = 600  # Starting y position after Disable/Enable
+        end_y = 700    # Ending y position
+        num_buttons = 2  # Number of remaining buttons (View Mod List and Export Mod Preset)
+        spacing = (end_y - start_y) / (num_buttons + 1)  # Space between buttons
+
+        # Place the remaining buttons with equal spacing, centered horizontally
+        view_mod_list_button.place(relx=0.5, y=start_y + spacing * 1, anchor="center")
+        export_mod_preset_button.place(relx=0.5, y=start_y + spacing * 2, anchor="center")
         more_options_button.config(text="Hide Options")
 
 def disable_all_mods():
@@ -254,7 +266,7 @@ def cleanup_temp_disabled_folder(current_dir):
         print(f"Failed to remove {TEMP_DISABLED_DIR} folder: {str(e)}")
 
 def view_mod_list():
-    """Open a window to view and manage individual mods, allowing only one instance."""
+    """Open a window to view and manage individual mods, allowing only one instance, with scrollbars."""
     global mod_window_open
     if mod_window_open:
         messagebox.showinfo("Window Limit", "Only one View Mod List window can be open at a time.")
@@ -311,18 +323,46 @@ def view_mod_list():
     disabled_frame = tk.Frame(mod_window, bg="#000000")
     disabled_frame.pack(side=tk.RIGHT, padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-    # Enabled mods listbox
+    # Enabled mods listbox with scrollbar
     tk.Label(enabled_frame, text="Enabled Mods", font=("Arial", 12), fg="white", bg="#000000").pack()
-    enabled_listbox = tk.Listbox(enabled_frame, font=("Arial", 10), height=20, width=40, bg="#333333", fg="white", selectmode=tk.MULTIPLE)
-    enabled_listbox.pack(pady=5, fill=tk.BOTH, expand=True)
+    
+    # Create a frame to hold the listbox and scrollbar
+    enabled_list_frame = tk.Frame(enabled_frame, bg="#000000")
+    enabled_list_frame.pack(pady=5, fill=tk.BOTH, expand=True)
 
-    # Disabled mods listbox
+    # Add scrollbar
+    enabled_scrollbar = tk.Scrollbar(enabled_list_frame, orient=tk.VERTICAL)
+    enabled_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    # Create the listbox and configure it with the scrollbar
+    enabled_listbox = tk.Listbox(enabled_list_frame, font=("Arial", 10), width=40, bg="#333333", fg="white", selectmode=tk.MULTIPLE)
+    enabled_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    # Bind the scrollbar to the listbox
+    enabled_listbox.config(yscrollcommand=enabled_scrollbar.set)
+    enabled_scrollbar.config(command=enabled_listbox.yview)
+
+    # Disabled mods listbox with scrollbar
     tk.Label(disabled_frame, text="Disabled Mods", font=("Arial", 12), fg="white", bg="#000000").pack()
-    disabled_listbox = tk.Listbox(disabled_frame, font=("Arial", 10), height=20, width=40, bg="#333333", fg="white", selectmode=tk.MULTIPLE)
-    disabled_listbox.pack(pady=5, fill=tk.BOTH, expand=True)
+    
+    # Create a frame to hold the listbox and scrollbar
+    disabled_list_frame = tk.Frame(disabled_frame, bg="#000000")
+    disabled_list_frame.pack(pady=5, fill=tk.BOTH, expand=True)
+
+    # Add scrollbar
+    disabled_scrollbar = tk.Scrollbar(disabled_list_frame, orient=tk.VERTICAL)
+    disabled_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    # Create the listbox and configure it with the scrollbar
+    disabled_listbox = tk.Listbox(disabled_list_frame, font=("Arial", 10), width=40, bg="#333333", fg="white", selectmode=tk.MULTIPLE)
+    disabled_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    # Bind the scrollbar to the listbox
+    disabled_listbox.config(yscrollcommand=disabled_scrollbar.set)
+    disabled_scrollbar.config(command=disabled_listbox.yview)
 
     # Populate listboxes
-    for display_name, (mod_dir, mod_name, current_path) in mods.items():
+    for display_name, (mod_dir, mod_name, current_path) in sorted(mods.items()):
         if TEMP_DISABLED_DIR in current_path:
             disabled_listbox.insert(tk.END, display_name)
         else:
@@ -397,7 +437,7 @@ def view_mod_list():
                 for item in os.listdir(temp_mod_dir):
                     display_name = f"{item} ({mod_dir})"
                     mods[display_name] = (mod_dir, item, os.path.join(temp_mod_dir, item))
-        for display_name, (mod_dir, mod_name, current_path) in mods.items():
+        for display_name, (mod_dir, mod_name, current_path) in sorted(mods.items()):
             if TEMP_DISABLED_DIR in current_path:
                 disabled_listbox.insert(tk.END, display_name)
             else:
@@ -472,6 +512,165 @@ def check_log_errors(current_dir):
         if errors:
             log_errors[log_name] = errors
     return bool(log_errors)
+
+def export_mods():
+    """Export selected mod folders to a ZIP file with a progress bar."""
+    if is_game_running():
+        messagebox.showwarning("Game Running", "Cannot export mods while Cyberpunk 2077 is running!")
+        return
+
+    current_dir = os.getcwd()
+
+    # Create selection window for mod folders
+    selection_window = tk.Toplevel(window)
+    selection_window.title("Select Mod Folders to Export")
+    selection_window.geometry("300x200")
+    selection_window.resizable(False, False)
+    selection_window.configure(bg="#000000")
+    selection_window.transient(window)  # Keep it on top of the main window
+    selection_window.grab_set()  # Make it modal
+
+    # Set the same icon as the main window for the selection window
+    if os.path.exists(ICON_PATH):
+        try:
+            selection_window.iconbitmap(ICON_PATH)
+        except tk.TclError as e:
+            print(f"Warning: Failed to set icon for Selection window from '{ICON_PATH}': {e}. Using default icon.")
+    else:
+        print(f"Warning: Icon file '{ICON_PATH}' not found for Selection window. Using default icon.")
+
+    # Center the selection window
+    screen_width = selection_window.winfo_screenwidth()
+    screen_height = selection_window.winfo_screenheight()
+    window_width = 300
+    window_height = 200
+    x = (screen_width - window_width) // 2
+    y = (screen_height - window_height) // 2
+    selection_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+    # Variables to track selected folders
+    folder_vars = {mod_dir: tk.BooleanVar(value=True) for mod_dir in MOD_DIRECTORIES}
+
+    # Checkboxes for each mod folder
+    for i, mod_dir in enumerate(MOD_DIRECTORIES):
+        full_dir = os.path.join(current_dir, mod_dir)
+        enabled = os.path.exists(full_dir)
+        cb = tk.Checkbutton(selection_window, text=mod_dir, variable=folder_vars[mod_dir],
+                            font=("Arial", 10), bg="#000000", fg="white", selectcolor="#333333",
+                            activebackground="#000000", activeforeground="white", state="normal" if enabled else "disabled")
+        cb.pack(pady=5, anchor="w", padx=10)
+
+    # Confirm button
+    def on_confirm():
+        selected_folders = [mod_dir for mod_dir, var in folder_vars.items() if var.get() and os.path.exists(os.path.join(current_dir, mod_dir))]
+        if not selected_folders:
+            messagebox.showwarning("No Selection", "Please select at least one mod folder to export.")
+            return
+        selection_window.destroy()
+        _export_with_progress(selected_folders)
+
+    confirm_button = tk.Button(selection_window, text="Confirm", command=on_confirm, font=("Arial", 12),
+                               bg="#00FF00", fg="black")
+    confirm_button.pack(pady=10)
+
+    # Add hover effects to confirm button
+    confirm_button.bind("<Enter>", lambda e: confirm_button.config(bg="#00CC00", fg="black"))  # Darker green
+    confirm_button.bind("<Leave>", lambda e: confirm_button.config(bg="#00FF00", fg="black"))
+
+    selection_window.wait_window()  # Wait for the selection window to close
+
+def _export_with_progress(selected_folders):
+    """Helper function to handle the export process with progress bar."""
+    current_dir = os.getcwd()
+    # Prompt user for save location and filename
+    default_filename = f"Mod_Preset_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    save_path = filedialog.asksaveasfilename(
+        defaultextension=".zip",
+        filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
+        initialfile=default_filename,
+        title="Save Mod Preset As"
+    )
+    if not save_path:
+        return  # User cancelled the dialog
+
+    # Create progress window
+    progress_window = tk.Toplevel(window)
+    progress_window.title("Exporting Mod Preset")
+    progress_window.geometry("300x100")
+    progress_window.resizable(False, False)
+    progress_window.configure(bg="#000000")
+    progress_window.transient(window)  # Keep it on top of the main window
+    progress_window.grab_set()  # Make it modal
+
+    # Set the same icon as the main window for the progress window
+    if os.path.exists(ICON_PATH):
+        try:
+            progress_window.iconbitmap(ICON_PATH)
+        except tk.TclError as e:
+            print(f"Warning: Failed to set icon for Progress window from '{ICON_PATH}': {e}. Using default icon.")
+    else:
+        print(f"Warning: Icon file '{ICON_PATH}' not found for Progress window. Using default icon.")
+
+    # Center the progress window
+    screen_width = progress_window.winfo_screenwidth()
+    screen_height = progress_window.winfo_screenheight()
+    window_width = 300
+    window_height = 100
+    x = (screen_width - window_width) // 2
+    y = (screen_height - window_height) // 2
+    progress_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+    # Progress bar and label
+    tk.Label(progress_window, text="Exporting mod preset...", fg="white", bg="#000000", font=("Arial", 10)).pack(pady=10)
+    progress_bar = ttk.Progressbar(progress_window, length=250, mode="determinate")
+    progress_bar.pack(pady=10)
+    status_label_progress = tk.Label(progress_window, text="", fg="white", bg="#000000", font=("Arial", 8))
+    status_label_progress.pack()
+
+    # Calculate total number of files
+    total_files = 0
+    for mod_dir in selected_folders:
+        full_dir = os.path.join(current_dir, mod_dir)
+        if os.path.exists(full_dir):
+            for root, _, files in os.walk(full_dir):
+                total_files += len(files)
+    if total_files == 0:
+        messagebox.showinfo("No Mods", "No mods found to export in the selected folders.")
+        progress_window.destroy()
+        return
+
+    progress_bar["maximum"] = total_files
+    progress_bar["value"] = 0
+    progress_window.update()
+
+    errors = []
+    files_processed = 0
+    with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for mod_dir in selected_folders:
+            full_dir = os.path.join(current_dir, mod_dir)
+            if os.path.exists(full_dir):
+                for root, _, files in os.walk(full_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, current_dir)
+                        try:
+                            zipf.write(file_path, arcname)
+                            files_processed += 1
+                            progress_bar["value"] = files_processed
+                            status_label_progress.config(text=f"Processing: {files_processed}/{total_files}")
+                            progress_window.update()
+                        except Exception as e:
+                            errors.append(f"Failed to add {file_path} to archive: {str(e)}")
+
+    progress_window.destroy()
+
+    if errors:
+        messagebox.showerror("Export Errors", "\n".join(errors))
+        status_label.config(text="Mod preset export completed with errors. Check details.")
+    else:
+        messagebox.showinfo("Export Successful", f"Mod preset exported to {save_path}")
+        status_label.config(text="Mod preset exported successfully!")
+    update_mod_count_label()
 
 def run_script():
     current_dir = os.getcwd()
@@ -560,7 +759,6 @@ def run_script():
                         if os.path.isdir(full_path):
                             file.write(f"{item}\n")
                 else:
-                    # List all items for other directories
                     for item in os.listdir(directory):
                         full_path = os.path.join(directory, item)
                         if os.path.isfile(full_path) or os.path.isdir(full_path):
@@ -693,7 +891,7 @@ more_options_button = tk.Button(window, text="More Options", command=toggle_mod_
 if os.path.exists(os.path.join(current_dir, "archive")):
     more_options_button.place(relx=0.5, y=500, anchor="center")
 else:
-    status_label.config(text="Application not installed in the correct location!")
+    status_label.config(text="Please place application in the Cyberpunk 2077 Directory!")
 
 disable_button = tk.Button(window, text="Disable All Mods", command=disable_all_mods, font=("Arial", 12), width=15,
                            bg="#FF0000", fg="white")
@@ -705,6 +903,10 @@ enable_button = tk.Button(window, text="Enable All Mods", command=enable_all_mod
 
 view_mod_list_button = tk.Button(window, text="View Mod List", command=view_mod_list, font=("Arial", 12), width=15,
                                  bg="#FFFF00", fg="black")
+# Initially not placed
+
+export_mod_preset_button = tk.Button(window, text="Export Mod Preset", command=export_mods, font=("Arial", 12), width=15,
+                                     bg="#00FFFF", fg="black")  # Cyan color for distinction
 # Initially not placed
 
 # Add hover effects to main window buttons
@@ -720,6 +922,8 @@ enable_button.bind("<Enter>", lambda e: enable_button.config(bg="#00CC00", fg="b
 enable_button.bind("<Leave>", lambda e: enable_button.config(bg="#00FF00", fg="black"))
 view_mod_list_button.bind("<Enter>", lambda e: view_mod_list_button.config(bg="#E6E600", fg="black"))  # Lighter yellow
 view_mod_list_button.bind("<Leave>", lambda e: view_mod_list_button.config(bg="#FFFF00", fg="black"))
+export_mod_preset_button.bind("<Enter>", lambda e: export_mod_preset_button.config(bg="#00CCCC", fg="black"))  # Darker cyan
+export_mod_preset_button.bind("<Leave>", lambda e: export_mod_preset_button.config(bg="#00FFFF", fg="black"))
 
 link_canvas = tk.Canvas(window, width=100, height=20, highlightthickness=0, bg="#000000", bd=0)
 link_canvas.place(relx=0.5, y=770, anchor="center")
@@ -749,7 +953,7 @@ if os.path.exists(os.path.join(current_dir, "archive")):
     log_errors_label.config(text=f"Log Errors Detected: {'Yes' if initial_log_errors else 'No'}")
     pl_dlc_label.config(text=f"Phantom Liberty DLC: {'Yes' if initial_phantom_liberty_installed else 'No'}")
 else:
-    status_label.config(text="Application not installed in the correct location!")
+    status_label.config(text="Please place application in the Cyberpunk 2077 Directory!")
 
 image_label.lower()
 
