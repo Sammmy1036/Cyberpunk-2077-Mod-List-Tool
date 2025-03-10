@@ -34,14 +34,20 @@ Step 2: Double click the application "Cyberpunk 2077 Mod List Tool.exe"
 
 Step 3: Click 'Start'. The application should have generated a text file called "Cyberpunk2077ModList.txt". 
 
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **UNINSTALL**
 
 Delete "Cyberpunk 2077 Mod List Tool.exe" from your Cyberpunk 2077 game directory. 
+
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **PLEASE NOTE**
 
 Windows Defender and other Antivirus programs may falsely flag this as a potentially unwanted program or virus. It's 100% safe and most likely being flagged due to not being digitally signed by an actual publisher/developer. This application has already been submitted to be whitelisted from Microsoft so it should work itself out with time. 
 
 If you do not feel comfortable downloading and installing, you can make a very cut down version of this yourself!
+
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+
 ﻿
