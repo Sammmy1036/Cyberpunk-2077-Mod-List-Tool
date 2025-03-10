@@ -34,7 +34,6 @@ If you do not feel comfortable downloading and installing, you can make a very c
 
 
 **PLANNED FEATURES**
-
 Optional checkbox to include or not include logs with mod list.
 
 Additional elements to GUI such as total number of mods installed, Game Version, and Phantom Liberty DLC info. 
