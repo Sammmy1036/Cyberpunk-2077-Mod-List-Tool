@@ -1,17 +1,18 @@
-import tkinter as tk
-import os
-import sys
-import webbrowser
-import datetime
-import re
-from tkinter import messagebox, ttk, filedialog
-import tempfile
-import shutil
-import time
-import psutil
-import zipfile
-from pathlib import Path
-import msvcrt  # For file locking on Windows
+import tkinter as tk  # Imported for GUI
+import os  # imported for accessing files and executing system directory operations
+import msvcrt  # imported and used to lock certain windows inside the application itself
+import sys  # imported for lock mechanism of application ensuring only one instance can run
+import tempfile  # imported to generate a temporary file path
+import webbrowser  # imported for opening Nexus Mod Page links
+import datetime  # imported to print the date of text file generation
+import time  # imported to print the time of text file generation
+import re  # imported specifically to parse CET log for regex pattern to determine version
+import shutil  # imported for enabling/disabling mods
+import psutil  # imported to check if the game is running
+import zipfile  # imported for exporting mods to a zip file
+from tkinter import messagebox, ttk, filedialog  # imported for dialogs, styling, and file saving
+from watchdog.observers import Observer  # imported for updating the mod counter in the GUI
+from watchdog.events import FileSystemEventHandler  # imported for updating the mod counter in the GUI
 
 try:
     import win32api
@@ -27,7 +28,7 @@ CORE_DEPENDENCIES = {
     "ArchiveXL": {"id": "4198", "path": "red4ext/plugins/ArchiveXL/ArchiveXL.dll"},
     "Codeware": {"id": "7780", "path": "red4ext/plugins/Codeware/Codeware.dll"},
     "Cyber Engine Tweaks": {"id": "107", "path": "bin/x64/version.dll", "log_path": "bin/x64/plugins/cyber_engine_tweaks/cyber_engine_tweaks.log"},
-    "EquipmentEx": {"id": "6945", "path": "r6/scripts/EquipmentEx/EquipmentEx.reds"},
+    "EquipmentEx": {"id": "6945", "path": ["r6/scripts/EquipmentEx/EquipmentEx.reds", "archive/pc/mod/EquipmentEx.archive", "archive/pc/mod/EquipmentEx.archive.xl"]},
     "RED4ext": {"id": "2380", "path": "red4ext/RED4ext.dll"},
     "Redscript": {"id": "1511", "path": "engine/tools/scc_lib.dll"},
     "TweakXL": {"id": "4197", "path": "red4ext/plugins/TweakXL/TweakXL.dll"}
@@ -66,9 +67,12 @@ _game_running_cache = None
 _cache_timestamp = 0
 CACHE_TIMEOUT = 2  # Cache for 2 seconds
 
+# Global observer for watchdog
+mod_observer = None
+
 def on_closing():
-    """Clean up lock file on exit using msvcrt locking."""
-    global mod_window_open, core_window_open
+    """Clean up lock file and stop watchdog observer on exit."""
+    global mod_window_open, core_window_open, mod_observer
     print("Closing application")
     if hasattr(sys, 'lock_file_handle') and sys.lock_file_handle:
         try:
@@ -77,6 +81,9 @@ def on_closing():
             os.remove(LOCK_FILE)
         except (OSError, IOError) as e:
             print(f"Error releasing lock or removing lock file: {e}")
+    if mod_observer:
+        mod_observer.stop()
+        mod_observer.join()
     mod_window_open = False
     core_window_open = False
     window.destroy()
@@ -184,7 +191,7 @@ def is_game_running():
     return _game_running_cache
 
 def toggle_mod_buttons():
-    """Toggle visibility of mod management buttons with side-by-side Disable/Enable and spaced others, lowered to avoid overlap."""
+    """Toggle visibility of mod management buttons with side-by-side Disable/Enable and spaced others."""
     if disable_button.winfo_viewable():
         disable_button.place_forget()
         enable_button.place_forget()
@@ -192,7 +199,6 @@ def toggle_mod_buttons():
         export_mod_preset_button.place_forget()
         more_options_button.config(text="More Options")
     else:
-        # Lower the y position to avoid overlapping with Core Mods and More Options
         disable_button.place(x=120, y=600)
         enable_button.place(x=330, y=600)
         start_y = 650
@@ -204,7 +210,7 @@ def toggle_mod_buttons():
         more_options_button.config(text="Hide Options")
 
 def disable_all_mods():
-    """Disable all mods by moving them to a 'Temporarily Disabled Mods' folder."""
+    """Disable all mods by moving them to a 'Temporarily Disabled Mods' folder, excluding EquipmentEx components."""
     if is_game_running():
         messagebox.showwarning("Game Running", "Cannot modify mods while Cyberpunk 2077 is running!")
         return
@@ -222,6 +228,13 @@ def disable_all_mods():
             temp_mod_dir = os.path.join(temp_disabled_path, mod_dir)
             os.makedirs(temp_mod_dir, exist_ok=True)
             for item in os.listdir(full_dir):
+                # Skip EquipmentEx components
+                norm_mod_dir = os.path.normpath(mod_dir)
+                norm_item = item.lower()
+                if (norm_mod_dir == os.path.normpath("r6/scripts") and norm_item == "equipmentex") or \
+                   (norm_mod_dir == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]):
+                    print(f"Skipping core mod component: {item} in {mod_dir}")
+                    continue
                 source = os.path.join(full_dir, item)
                 dest = os.path.join(temp_mod_dir, item)
                 try:
@@ -312,39 +325,37 @@ def cleanup_temp_disabled_folder(current_dir):
     except OSError as e:
         print(f"Failed to remove {TEMP_DISABLED_DIR} folder: {str(e)}")
 
-def get_local_version(mod_path):
-    """Get a local mod version (using last modified time as a placeholder)."""
-    try:
-        mod_mtime = os.path.getmtime(mod_path)
-        return datetime.datetime.fromtimestamp(mod_mtime).strftime('%Y-%m-%d')
-    except OSError:
-        return "Not Installed"
-
 def view_core_mods_status(current_dir):
     """Check if core dependency mods are installed and retrieve their versions."""
     status_data = {}
     for mod_name, info in CORE_DEPENDENCIES.items():
-        mod_path = os.path.join(current_dir, info["path"])
         is_installed = False
+        paths = info["path"] if isinstance(info["path"], list) else [info["path"]]  # Handle single path or list of paths
         try:
-            is_installed = os.path.exists(mod_path)
+            # For EquipmentEx, require all paths to exist; for others, any path is sufficient
+            if mod_name == "EquipmentEx":
+                is_installed = all(os.path.exists(os.path.join(current_dir, path)) for path in paths)
+            else:
+                is_installed = any(os.path.exists(os.path.join(current_dir, path)) for path in paths)
         except Exception as e:
-            print(f"Error checking {mod_name} at {mod_path}: {e}")
+            print(f"Error checking {mod_name} at {paths}: {e}")
 
-        # Determine version based on mod
-        version = None  # Default to None instead of "N/A"
+        # Determine version based on mod (only applies to DLLs or CET log)
+        version = None
         if mod_name in ["ArchiveXL", "RED4ext", "Codeware", "TweakXL"] and is_installed:
-            version = get_dll_version(mod_path)
-        elif mod_name == "Cyber Engine Tweaks" and "log_path" in info:
+            # Use the first path for version checking (assumes it's the DLL)
+            version = get_dll_version(os.path.join(current_dir, paths[0]))
+        elif mod_name == "Cyber Engine Tweaks" and "log_path" in info and is_installed:
             log_path = os.path.join(current_dir, info["log_path"])
-            version = get_cet_version(log_path) if is_installed else None
+            version = get_cet_version(log_path)
+        # EquipmentEx doesn't have a version check since it’s not a DLL or log-based
 
         status_data[mod_name] = {
             "installed": is_installed,
-            "path": info["path"],
+            "path": info["path"],  # Keep the original path structure (list or string)
             "version": version
         }
-        print(f"Debug: Checking {mod_name} at {mod_path} - Exists: {is_installed} - Version: {version if version else 'N/A'}")
+        print(f"Debug: Checking {mod_name} - Exists: {is_installed} - Version: {version if version else 'N/A'} - Paths: {paths}")
     return status_data
 
 def view_mod_list():
@@ -540,8 +551,8 @@ def view_mod_list():
                         continue
                     display_name = f"{item} ({mod_dir})"
                     mods[display_name] = (mod_dir, item, os.path.join(temp_mod_dir, item))
-        update_mod_list(mod_window, selected_dir_var, mods)  # Refresh list after modification
         update_mod_count_label()
+        update_mod_list(mod_window, selected_dir_var, mods)  # Refresh list after modification
 
     disable_selected_button = tk.Button(enabled_frame, text="Disable Selected", command=disable_selected, font=("Arial", 12), bg="#FF0000", fg="white")
     disable_selected_button.pack(pady=5)
@@ -653,7 +664,7 @@ def view_core_mods():
 
         # Schedule the next update
         if core_window.winfo_exists():
-            core_window.after(5000, update_status)  # Check every 5 seconds
+            core_window.after(2000, update_status)  # Check every 2 seconds
 
     # Initial update
     update_status()
@@ -664,6 +675,43 @@ def on_core_window_close(core_window):
     global core_window_open
     core_window_open = False
     core_window.destroy()
+
+class ModChangeHandler(FileSystemEventHandler):
+    """Handle file system events for mod directories."""
+    def on_created(self, event):
+        """Called when a file or directory is created."""
+        if not event.is_directory:  # Only count files, not directories (except for CET mods)
+            update_mod_count_label()
+        elif os.path.normpath(os.path.relpath(event.src_path, current_dir)).startswith("bin/x64/plugins/cyber_engine_tweaks/mods"):
+            update_mod_count_label()
+
+    def on_deleted(self, event):
+        """Called when a file or directory is deleted."""
+        if not event.is_directory:  # Only count files, not directories (except for CET mods)
+            update_mod_count_label()
+        elif os.path.normpath(os.path.relpath(event.src_path, current_dir)).startswith("bin/x64/plugins/cyber_engine_tweaks/mods"):
+            update_mod_count_label()
+
+    def on_moved(self, event):
+        """Called when a file or directory is moved or renamed."""
+        if not event.is_directory:  # Only count files, not directories (except for CET mods)
+            update_mod_count_label()
+        elif os.path.normpath(os.path.relpath(event.src_path, current_dir)).startswith("bin/x64/plugins/cyber_engine_tweaks/mods") or \
+             (event.dest_path and os.path.normpath(os.path.relpath(event.dest_path, current_dir)).startswith("bin/x64/plugins/cyber_engine_tweaks/mods")):
+            update_mod_count_label()
+
+def start_mod_watcher():
+    """Start watching mod directories for changes."""
+    global mod_observer
+    current_dir = os.getcwd()
+    event_handler = ModChangeHandler()
+    mod_observer = Observer()
+    for mod_dir in MOD_DIRECTORIES:
+        full_dir = os.path.join(current_dir, mod_dir)
+        if os.path.exists(full_dir):
+            mod_observer.schedule(event_handler, full_dir, recursive=False)
+    mod_observer.start()
+    return mod_observer
 
 def update_mod_count_label():
     """Update the mod count label based on current enabled mods, excluding EquipmentEx files."""
@@ -924,13 +972,20 @@ def run_script():
         if errors:
             log_errors[log_name] = errors
 
-    # Check if all core mods are installed (moved outside with block for scope)
+    # Check if all core mods are installed, handling both single paths and lists
     all_core_mods_installed = True
     for mod_name, info in CORE_DEPENDENCIES.items():
-        mod_path = os.path.join(current_dir, info["path"])
-        if not os.path.exists(mod_path):
-            all_core_mods_installed = False
-            break
+        paths = info["path"] if isinstance(info["path"], list) else [info["path"]]
+        if mod_name == "EquipmentEx":
+            # For EquipmentEx, all paths must exist
+            if not all(os.path.exists(os.path.join(current_dir, path)) for path in paths):
+                all_core_mods_installed = False
+                break
+        else:
+            # For other mods, any path existing is sufficient
+            if not any(os.path.exists(os.path.join(current_dir, path)) for path in paths):
+                all_core_mods_installed = False
+                break
 
     with open('Cyberpunk 2077 Mod List.txt', 'w') as file:
         file.write(f"Cyberpunk 2077 Mod List Tool by Sammmy1036\n")
@@ -1078,10 +1133,17 @@ initial_log_errors = check_log_errors(current_dir)
 # Check if all core mods are installed for initial UI setup
 initial_all_core_mods_installed = True
 for mod_name, info in CORE_DEPENDENCIES.items():
-    mod_path = os.path.join(current_dir, info["path"])
-    if not os.path.exists(mod_path):
-        initial_all_core_mods_installed = False
-        break
+    paths = info["path"] if isinstance(info["path"], list) else [info["path"]]
+    if mod_name == "EquipmentEx":
+        # For EquipmentEx, all paths must exist
+        if not all(os.path.exists(os.path.join(current_dir, path)) for path in paths):
+            initial_all_core_mods_installed = False
+            break
+    else:
+        # For other mods, any path existing is sufficient
+        if not any(os.path.exists(os.path.join(current_dir, path)) for path in paths):
+            initial_all_core_mods_installed = False
+            break
 
 initial_mod_count = 0
 for mod_dir in MOD_DIRECTORIES:
@@ -1193,6 +1255,8 @@ if os.path.exists(os.path.join(current_dir, "archive")):
     game_version_label.config(text=f"Game Version: {initial_game_version}")
     log_errors_label.config(text=f"Log Errors Detected: {'Yes' if initial_log_errors else 'No'}")
     pl_dlc_label.config(text=f"Core Mods Installed: {'Yes' if initial_all_core_mods_installed else 'No'}")
+    # Start the watchdog observer
+    start_mod_watcher()
 else:
     status_label.config(text="Please place application in the Cyberpunk 2077 Directory!")
 
