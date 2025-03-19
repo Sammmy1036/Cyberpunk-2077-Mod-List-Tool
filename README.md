@@ -47,7 +47,7 @@ Step 3: Click 'Start'. The application should have generated a text file called 
 
 Selecting Core Mods Status button will open a window with the status of the below core mods
 
-****ArchiveXL** - Will display currently installed version and if all required files pertaining to this dependency are installed.
+**ArchiveXL** - Will display currently installed version and if all required files pertaining to this dependency are installed.
 
 **Codeware** - Will display currently installed version and if all required files pertaining to this dependency are installed.
 
