@@ -43,6 +43,18 @@ Step 2: If you would like the list to not include log files deselect "Include Lo
 
 Step 3: Click 'Start'. The application should have generated a text file called "Cyberpunk 2077 Mod List.txt" located in your Cyberpunk 2077 directory.
 
+**_Core Mods Status_**
+
+Selecting Core Mods Status button will open a window with the status of the below core mods
+
+****ArchiveXL** - Will display currently installed version and if all required files pertaining to this dependency are installed. 
+**Codeware** - Will display currently installed version and if all required files pertaining to this dependency are installed.
+**Cyber Engine Tweaks** - Will display the version if a Cyber Engine Tweaks log file is available and if it is installed. 
+**EquipmentEx** - Will display if all required files pertaining to this dependency are installed. No version is listed for this since there is no readable references to the version in its files. 
+**RED4ext** - Will display currently installed version and if all required files pertaining to this dependency are installed.
+**Redscript** - Will display if all required files pertaining to this dependency are installed.
+**TweakXL** - Will display currently installed version and if all required files pertaining to this dependency are installed.
+
 **_More Options Feature - Enable/Disable All Mods_**
 
 Selecting "Disable All Mods" creates a folder in your Cyberpunk 2077 Directory called "Temporarily Disabled Mods" and moves all installed mods to this folder. 
