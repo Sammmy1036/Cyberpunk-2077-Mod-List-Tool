@@ -28,13 +28,49 @@ DEFAULT_GAME_VERSION = "Unknown"
 
 # Core dependencies and their Nexus Mod IDs with expected paths (relative to the current directory)
 CORE_DEPENDENCIES = {
-    "ArchiveXL": {"id": "4198", "path": "red4ext/plugins/ArchiveXL/ArchiveXL.dll"},
-    "Codeware": {"id": "7780", "path": "red4ext/plugins/Codeware/Codeware.dll"},
+    "ArchiveXL": {
+        "id": "4198",
+        "path": [
+            "red4ext/plugins/ArchiveXL/Bundle/ArchiveXL.archive",
+            "red4ext/plugins/ArchiveXL/Bundle/PhotoModeScope.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerBaseScope.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBeardFix.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBeardScope.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBrowsFix.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBrowsPatch.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationBrowsScope.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationHairFix.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationHairPatch.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationHairScope.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationLashesFix.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationLashesPatch.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationLashesScope.xl",
+            "red4ext/plugins/ArchiveXL/Bundle/PlayerCustomizationScope.xl",
+            "red4ext/plugins/ArchiveXL/Scripts/ArchiveXL.Global.reds",
+            "red4ext/plugins/ArchiveXL/Scripts/ArchiveXL.reds",
+            "red4ext/plugins/ArchiveXL/ArchiveXL.dll"]},
+    "Codeware": {
+        "id": "7780",
+        "path": [
+            "red4ext/plugins/Codeware/Data/KnownHashes.txt",
+            "red4ext/plugins/Codeware/Scripts/Codeware.Global.reds",
+            "red4ext/plugins/Codeware/Scripts/Codeware.Localization.reds",
+            "red4ext/plugins/Codeware/Scripts/Codeware.UI.TextInput.reds",
+            "red4ext/plugins/Codeware/Scripts/Codeware.UI.reds",
+            "red4ext/plugins/Codeware/Scripts/Codeware.reds",
+            "red4ext/plugins/Codeware/Codeware.dll"]},
     "Cyber Engine Tweaks": {"id": "107", "path": "bin/x64/version.dll", "log_path": "bin/x64/plugins/cyber_engine_tweaks/cyber_engine_tweaks.log"},
-    "EquipmentEx": {"id": "6945", "path": ["r6/scripts/EquipmentEx/EquipmentEx.reds", "archive/pc/mod/EquipmentEx.archive", "archive/pc/mod/EquipmentEx.archive.xl"]},
-    "RED4ext": {"id": "2380", "path": "red4ext/RED4ext.dll"},
-    "Redscript": {"id": "1511", "path": "engine/tools/scc_lib.dll"},
-    "TweakXL": {"id": "4197", "path": "red4ext/plugins/TweakXL/TweakXL.dll"}
+    "EquipmentEx": {"id": "6945", "path": ["r6/scripts/EquipmentEx/EquipmentEx.Global.reds", "r6/scripts/EquipmentEx/EquipmentEx.reds", "archive/pc/mod/EquipmentEx.archive", "archive/pc/mod/EquipmentEx.archive.xl"]},
+    "RED4ext": {"id": "2380", "path": ["bin/x64/winmm.dll", "red4ext/RED4ext.dll"]},
+    "Redscript": {"id": "1511", "path": ["engine/config/base/scripts.ini", "engine/tools/scc.exe", "engine/tools/scc_lib.dll", "r6/config/cybercmd/scc.toml"]},
+    "TweakXL": {
+        "id": "4197",
+        "path": [
+            "red4ext/plugins/TweakXL/Data/ExtraFlats.dat", 
+            "red4ext/plugins/TweakXL/Data/InheritanceMap.dat", 
+            "red4ext/plugins/TweakXL/Scripts/TweakXL.Global.reds", 
+            "red4ext/plugins/TweakXL/Scripts/TweakXL.reds", 
+            "red4ext/plugins/TweakXL/TweakXL.dll"]}
 }
 
 # Get the base directory for the application
@@ -335,10 +371,11 @@ def view_core_mods_status(current_dir):
         is_installed = False
         paths = info["path"] if isinstance(info["path"], list) else [info["path"]]  # Handle single path or list of paths
         try:
-            # For EquipmentEx, require all paths to exist; for others, any path is sufficient
-            if mod_name == "EquipmentEx":
+            # For core mods which have multiple files this ensures that if the mod is not fully installed and missing files it will list that install is required
+            if mod_name in ["ArchiveXL", "Codeware", "EquipmentEx", "RED4ext", "Redscript", "TweakXL"]:
                 is_installed = all(os.path.exists(os.path.join(current_dir, path)) for path in paths)
             else:
+                # For other mods, any path existing is sufficient
                 is_installed = any(os.path.exists(os.path.join(current_dir, path)) for path in paths)
         except Exception as e:
             print(f"Error checking {mod_name} at {paths}: {e}")
@@ -346,8 +383,9 @@ def view_core_mods_status(current_dir):
         # Determine version based on mod (only applies to DLLs or CET log)
         version = None
         if mod_name in ["ArchiveXL", "RED4ext", "Codeware", "TweakXL"] and is_installed:
-            # Use the first path for version checking (assumes it's the DLL)
-            version = get_dll_version(os.path.join(current_dir, paths[0]))
+            # Use the DLL path for version checking
+            dll_path = next((p for p in paths if p.endswith(".dll")), paths[0])  # Use first .dll file or first path
+            version = get_dll_version(os.path.join(current_dir, dll_path))
         elif mod_name == "Cyber Engine Tweaks" and "log_path" in info and is_installed:
             log_path = os.path.join(current_dir, info["log_path"])
             version = get_cet_version(log_path)
