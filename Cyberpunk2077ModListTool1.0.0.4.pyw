@@ -209,6 +209,17 @@ def is_phantom_liberty_installed(current_dir):
         return True
     return False
 
+def get_most_recent_log(directory, base_name):
+    """Find the most recent log file in the directory matching the base_name pattern."""
+    import glob
+    pattern = os.path.join(directory, f"{base_name}-*.log")
+    log_files = glob.glob(pattern)
+    if not log_files:
+        return None
+    # Sort by modification time, most recent first
+    log_files.sort(key=os.path.getmtime, reverse=True)
+    return log_files[0]  # Return the most recent file
+
 def is_game_running():
     # Check if Cyberpunk2077.exe is running using psutil with caching
     global _game_running_cache, _cache_timestamp
@@ -809,6 +820,63 @@ def check_log_errors(current_dir):
             log_errors[log_name] = errors
     return bool(log_errors)
 
+def write_items_from_dir(file, directory, folder_name, temp_dir):
+    """Write mod items from a directory and its disabled counterpart to the file."""
+    if os.path.exists(directory):
+        file.write(f"\nMods located in {folder_name}:\n")
+        file.write("-" * 120 + "\n")
+        if folder_name == "bin/x64/plugins/cyber_engine_tweaks/mods":
+            for item in os.listdir(directory):
+                full_path = os.path.join(directory, item)
+                if os.path.isdir(full_path):
+                    norm_folder_name = os.path.normpath(folder_name)
+                    norm_item = item.lower()
+                    if (norm_folder_name == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
+                       (norm_folder_name == os.path.normpath("r6/scripts") and norm_item == "equipmentex"):
+                        print(f"Excluding EquipmentEx file/folder from mod list in .txt: {item} ({folder_name})")
+                        continue
+                    file.write(f"{item}\n")
+                    print(f"Wrote directory mod: {item} in {folder_name}")
+        else:
+            for item in os.listdir(directory):
+                norm_folder_name = os.path.normpath(folder_name)
+                norm_item = item.lower()
+                if (norm_folder_name == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
+                   (norm_folder_name == os.path.normpath("r6/scripts") and norm_item == "equipmentex"):
+                    print(f"Excluding EquipmentEx file/folder from mod list in .txt: {item} ({folder_name})")
+                    continue
+                file.write(f"{item}\n")
+                print(f"Wrote file mod: {item} in {folder_name}")
+    else:
+        file.write(f"\nError: The subfolder(s) {folder_name} were not found in the current location!\n")
+    
+    disabled_dir = os.path.join(temp_dir, folder_name)
+    if os.path.exists(disabled_dir):
+        file.write(f"\nDisabled mods in {TEMP_DISABLED_DIR}/{folder_name}:\n")
+        file.write("-" * 120 + "\n")
+        if folder_name == "bin/x64/plugins/cyber_engine_tweaks/mods":
+            for item in os.listdir(disabled_dir):
+                full_path = os.path.join(disabled_dir, item)
+                if os.path.isdir(full_path):
+                    norm_folder_name = os.path.normpath(folder_name)
+                    norm_item = item.lower()
+                    if (norm_folder_name == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
+                       (norm_folder_name == os.path.normpath("r6/scripts") and norm_item == "equipmentex"):
+                        print(f"Excluding EquipmentEx file/folder from disabled mod list in .txt: {item} ({folder_name})")
+                        continue
+                    file.write(f"{item}\n")
+                    print(f"Wrote disabled directory mod: {item} in {folder_name}")
+        else:
+            for item in os.listdir(disabled_dir):
+                norm_folder_name = os.path.normpath(folder_name)
+                norm_item = item.lower()
+                if (norm_folder_name == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
+                   (norm_folder_name == os.path.normpath("r6/scripts") and norm_item == "equipmentex"):
+                    print(f"Excluding EquipmentEx file/folder from disabled mod list in .txt: {item} ({folder_name})")
+                    continue
+                file.write(f"{item}\n")
+                print(f"Wrote disabled file mod: {item} in {folder_name}")
+
 def export_mods():
     # Export selected mod folders to a ZIP file with a progress bar
     if is_game_running():
@@ -984,7 +1052,6 @@ def run_script():
         if os.path.exists(path):
             mod_dir = os.path.relpath(path, current_dir)
             for item in os.listdir(path):
-                # Normalize paths and check for EquipmentEx files
                 norm_mod_dir = os.path.normpath(mod_dir)
                 norm_item = item.lower()
                 if (norm_mod_dir == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
@@ -1012,17 +1079,14 @@ def run_script():
         if errors:
             log_errors[log_name] = errors
 
-    # Check if all core mods are installed, handling both single paths and lists
     all_core_mods_installed = True
     for mod_name, info in CORE_DEPENDENCIES.items():
         paths = info["path"] if isinstance(info["path"], list) else [info["path"]]
         if mod_name == "EquipmentEx":
-            # For EquipmentEx, all paths must exist
             if not all(os.path.exists(os.path.join(current_dir, path)) for path in paths):
                 all_core_mods_installed = False
                 break
         else:
-            # For other mods, any path existing is sufficient
             if not any(os.path.exists(os.path.join(current_dir, path)) for path in paths):
                 all_core_mods_installed = False
                 break
@@ -1046,85 +1110,50 @@ def run_script():
                     file.write(f"{error}\n")
             file.write("=" * 120 + "\n")
 
-        def write_items_from_dir(directory, folder_name, temp_dir):
-            if os.path.exists(directory):
-                file.write(f"\nMods located in {folder_name}:\n")
-                file.write("-" * 120 + "\n")
-                if folder_name == "bin/x64/plugins/cyber_engine_tweaks/mods":
-                    for item in os.listdir(directory):
-                        full_path = os.path.join(directory, item)
-                        if os.path.isdir(full_path):
-                            # Skip EquipmentEx related files and folders for the mod list
-                            norm_folder_name = os.path.normpath(folder_name)
-                            norm_item = item.lower()
-                            if (norm_folder_name == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
-                               (norm_folder_name == os.path.normpath("r6/scripts") and norm_item == "equipmentex"):
-                                print(f"Excluding EquipmentEx file/folder from mod list in .txt: {item} ({folder_name})")
-                                continue
-                            file.write(f"{item}\n")
-                            print(f"Wrote directory mod: {item} in {folder_name}")
-                else:
-                    for item in os.listdir(directory):
-                        # Skip EquipmentEx related files and folders for the mod list
-                        norm_folder_name = os.path.normpath(folder_name)
-                        norm_item = item.lower()
-                        if (norm_folder_name == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
-                           (norm_folder_name == os.path.normpath("r6/scripts") and norm_item == "equipmentex"):
-                            print(f"Excluding EquipmentEx file/folder from mod list in .txt: {item} ({folder_name})")
-                            continue
-                        file.write(f"{item}\n")
-                        print(f"Wrote file mod: {item} in {folder_name}")
-            else:
-                file.write(f"\nError: The subfolder(s) {folder_name} were not found in the current location!\n")
-            disabled_dir = os.path.join(temp_dir, folder_name)
-            if os.path.exists(disabled_dir):
-                file.write(f"\nDisabled mods in {TEMP_DISABLED_DIR}/{folder_name}:\n")
-                file.write("-" * 120 + "\n")
-                if folder_name == "bin/x64/plugins/cyber_engine_tweaks/mods":
-                    for item in os.listdir(disabled_dir):
-                        full_path = os.path.join(disabled_dir, item)
-                        if os.path.isdir(full_path):
-                            # Skip EquipmentEx related files and folders for the disabled mod list
-                            norm_folder_name = os.path.normpath(folder_name)
-                            norm_item = item.lower()
-                            if (norm_folder_name == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
-                               (norm_folder_name == os.path.normpath("r6/scripts") and norm_item == "equipmentex"):
-                                print(f"Excluding EquipmentEx file/folder from disabled mod list in .txt: {item} ({folder_name})")
-                                continue
-                            file.write(f"{item}\n")
-                            print(f"Wrote disabled directory mod: {item} in {folder_name}")
-                else:
-                    for item in os.listdir(disabled_dir):
-                        # Skip EquipmentEx related files and folders for the disabled mod list
-                        norm_folder_name = os.path.normpath(folder_name)
-                        norm_item = item.lower()
-                        if (norm_folder_name == os.path.normpath("archive/pc/mod") and norm_item in ["equipmentex.archive", "equipmentex.archive.xl"]) or \
-                           (norm_folder_name == os.path.normpath("r6/scripts") and norm_item == "equipmentex"):
-                            print(f"Excluding EquipmentEx file/folder from disabled mod list in .txt: {item} ({folder_name})")
-                            continue
-                        file.write(f"{item}\n")
-                        print(f"Wrote disabled file mod: {item} in {folder_name}")
-
-        write_items_from_dir(path1, archivemods, temp_disabled_path)
-        write_items_from_dir(path2, cetmods, temp_disabled_path)
-        write_items_from_dir(path3, r6scripts, temp_disabled_path)
-        write_items_from_dir(path4, r6tweaks, temp_disabled_path)
+        # Call write_items_from_dir for each directory
+        write_items_from_dir(file, path1, archivemods, temp_disabled_path)
+        write_items_from_dir(file, path2, cetmods, temp_disabled_path)
+        write_items_from_dir(file, path3, r6scripts, temp_disabled_path)
+        write_items_from_dir(file, path4, r6tweaks, temp_disabled_path)
 
         if include_logs_var.get():
-            for log_name, log_path in log_files.items():
-                if os.path.exists(log_path):
-                    file.write(f"\n{log_name} Log:\n")
-                    file.write("-" * 120 + "\n")
+            for log_name, primary_log_path in log_files.items():
+                log_dir = os.path.dirname(primary_log_path)
+                file.write(f"\n{log_name} Log:\n")
+                file.write("-" * 120 + "\n")
+                
+                # Try the primary log file first
+                log_path_to_use = primary_log_path
+                log_read_success = False
+                
+                if os.path.exists(log_path_to_use):
                     try:
-                        with open(log_path, 'r', encoding='utf-8') as input_file:
-                            file.write(input_file.read())
+                        with open(log_path_to_use, 'r', encoding='utf-8') as input_file:
+                            log_content = input_file.read()
+                            file.write(log_content)
                             file.write("\n")
+                            log_read_success = True
                     except (OSError, UnicodeDecodeError) as e:
                         file.write(f"Error reading {log_name}.log: {str(e)}\n")
-                else:
-                    file.write(f"\n{log_name} Log:")
-                    file.write("\n" + "-" * 120)
-                    file.write(f"\nThe {log_name} log could not be found! Log not provided!\n")
+                
+                # If primary log doesn't exist or can't be read, try the most recent log
+                if not log_read_success:
+                    recent_log = get_most_recent_log(log_dir, log_name)
+                    if recent_log:
+                        log_path_to_use = recent_log
+                        try:
+                            with open(log_path_to_use, 'r', encoding='utf-8') as input_file:
+                                file.write(f"Using most recent log file: {os.path.basename(log_path_to_use)}\n")
+                                log_content = input_file.read()
+                                file.write(log_content)
+                                file.write("\n")
+                                log_read_success = True
+                        except (OSError, UnicodeDecodeError) as e:
+                            file.write(f"Error reading recent {log_name} log ({os.path.basename(log_path_to_use)}): {str(e)}\n")
+                
+                # If no log could be read, write the not found message
+                if not log_read_success:
+                    file.write(f"The {log_name} log could not be found or read! Log not provided!\n")
 
     mod_count_label.place(x=10, y=760)
     game_version_label.place(x=10, y=780)
