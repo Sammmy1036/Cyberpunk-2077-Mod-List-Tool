@@ -62,8 +62,8 @@ Selecting Core Mods Status button will open a window with the status of the belo
 
 **TweakXL** - Will display currently installed version and if all required files pertaining to this dependency are installed.
 
-_It should be noted that these Core Mods are not included in the overall total calculation of installed mods and will remain untouched when temporarily disabling/enabling mods, and will not be viewable from the View Mod List Window. 
-_
+_It should be noted that these Core Mods are not included in the overall total calculation of installed mods and will remain untouched when temporarily disabling/enabling mods, and will not be viewable from the View Mod List Window._
+
 **_More Options Feature - Enable/Disable All Mods_**
 
 Selecting "Disable All Mods" creates a folder in your Cyberpunk 2077 Directory called "Temporarily Disabled Mods" and moves all installed mods to this folder. 
