@@ -43,6 +43,7 @@ Step 2: If you would like the list to not include log files deselect "Include Lo
 
 Step 3: Click 'Start'. The application should have generated a text file called "Cyberpunk 2077 Mod List.txt" located in your Cyberpunk 2077 directory.
 
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **_Core Mods Status_**
 
@@ -70,6 +71,8 @@ Selecting "Disable All Mods" creates a folder in your Cyberpunk 2077 Directory c
 
 Selecting "Enable All Mods" will restore all mods inside of the "Temporarily Disabled Mods" folder and delete this folder when there is no longer any mods inside. 
 
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+
 
 **_More Options Feature - View Mod List_**
 
@@ -79,6 +82,7 @@ Allows manual selection of each individual file of any Mods installed in your ga
 
 For Example a mod titled MyMod.archive is already installed in archive/pc/mod it will show up in the Enabled Mods side on the left. Clicking it will highlight it blue and you can select Disable Selected and it will Disable the mod putting it inside the "Temporarily Disabled Mods" folder locatied in your Cyberpunk 2077 Directory. 
 
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **_More Options Feature - Export Mod Preset_**
 
