@@ -54,11 +54,11 @@ Selecting Core Mods Status button will open a window with the status of the belo
 
 **Cyber Engine Tweaks** - Will display the version if a Cyber Engine Tweaks log file is available and if it is installed. 
 
-**EquipmentEx** - Will display if all required files pertaining to this dependency are installed. No version is listed for this since there is no readable references to the version in its files. 
+**EquipmentEx** - Will display if all required files pertaining to this dependency are installed. No version is listed due to no version references in files. 
 
 **RED4ext** - Will display currently installed version and if all required files pertaining to this dependency are installed.
 
-**Redscript** - Will display if all required files pertaining to this dependency are installed.
+**Redscript** - Will display if all required files pertaining to this dependency are installed. No version is listed due to no version references in files. 
 
 **TweakXL** - Will display currently installed version and if all required files pertaining to this dependency are installed.
 
