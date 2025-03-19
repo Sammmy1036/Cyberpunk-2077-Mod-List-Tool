@@ -14,6 +14,9 @@ from tkinter import messagebox, ttk, filedialog  # imported for dialogs, styling
 from watchdog.observers import Observer  # imported for updating the mod counter in the GUI
 from watchdog.events import FileSystemEventHandler  # imported for updating the mod counter in the GUI
 
+# Cyberpunk 2077 Mod List Tool Version
+tool_Version = "1.0.0.4"
+
 try:
     import win32api
     WIN32_AVAILABLE = True
@@ -71,7 +74,7 @@ CACHE_TIMEOUT = 2  # Cache for 2 seconds
 mod_observer = None
 
 def on_closing():
-    """Clean up lock file and stop watchdog observer on exit."""
+    # Clean up lock file and stop watchdog observer on exit
     global mod_window_open, core_window_open, mod_observer
     print("Closing application")
     if hasattr(sys, 'lock_file_handle') and sys.lock_file_handle:
@@ -89,7 +92,7 @@ def on_closing():
     window.destroy()
 
 def check_single_instance():
-    """Check if another instance is running using msvcrt file locking."""
+    # Check if another instance is running using msvcrt file locking
     try:
         lock_file_handle = open(LOCK_FILE, 'wb+')
         msvcrt.locking(lock_file_handle.fileno(), msvcrt.LK_NBLCK, 1)
@@ -110,7 +113,7 @@ def check_single_instance():
         return False
 
 def get_game_version(file_path):
-    """Retrieve the Product Version of the Cyberpunk 2077 executable."""
+    # Retrieve the Product Version of the Cyberpunk 2077 executable
     if not WIN32_AVAILABLE:
         return DEFAULT_GAME_VERSION
     try:
@@ -128,7 +131,7 @@ def get_game_version(file_path):
         return DEFAULT_GAME_VERSION
 
 def get_dll_version(file_path):
-    """Retrieve the Product Version of a DLL file."""
+    # Retrieve the Product Version of a DLL file
     if not WIN32_AVAILABLE:
         return "Unknown"
     try:
@@ -147,7 +150,7 @@ def get_dll_version(file_path):
         return "Unknown"
 
 def get_cet_version(log_path):
-    """Retrieve the Cyber Engine Tweaks version from its log file."""
+    # Retrieve the Cyber Engine Tweaks version from its log file
     if not os.path.exists(log_path):
         return "Unknown"
     try:
@@ -161,7 +164,7 @@ def get_cet_version(log_path):
     return "Unknown"
 
 def is_phantom_liberty_installed(current_dir):
-    """Check if Phantom Liberty DLC is installed by looking for specific files/folders."""
+    # Check if Phantom Liberty DLC is installed by looking for specific files/folders
     ep1_folder = os.path.join(current_dir, "archive", "pc", "ep1")
     tweakdb_ep1 = os.path.join(current_dir, "r6", "cache", "tweakdb_ep1.bin")
     if os.path.exists(ep1_folder) and any(f.endswith('.archive') for f in os.listdir(ep1_folder)):
@@ -171,7 +174,7 @@ def is_phantom_liberty_installed(current_dir):
     return False
 
 def is_game_running():
-    """Check if Cyberpunk2077.exe is running using psutil with caching."""
+    # Check if Cyberpunk2077.exe is running using psutil with caching
     global _game_running_cache, _cache_timestamp
     current_time = time.time()
     if _game_running_cache is not None and (current_time - _cache_timestamp) < CACHE_TIMEOUT:
@@ -191,7 +194,7 @@ def is_game_running():
     return _game_running_cache
 
 def toggle_mod_buttons():
-    """Toggle visibility of mod management buttons with side-by-side Disable/Enable and spaced others."""
+    # Toggle visibility of mod management buttons with side-by-side Disable/Enable and spaced others
     if disable_button.winfo_viewable():
         disable_button.place_forget()
         enable_button.place_forget()
@@ -210,12 +213,12 @@ def toggle_mod_buttons():
         more_options_button.config(text="Hide Options")
 
 def disable_all_mods():
-    """Disable all mods by moving them to a 'Temporarily Disabled Mods' folder, excluding EquipmentEx components."""
+    # Disable all mods by moving them to a 'Temporarily Disabled Mods' folder, excluding EquipmentEx components
     if is_game_running():
         messagebox.showwarning("Game Running", "Cannot modify mods while Cyberpunk 2077 is running!")
         return
 
-    if not messagebox.askyesno("Confirm Disable", "This will move all mods to the 'Temporarily Disabled Mods' folder. Proceed?"):
+    if not messagebox.askyesno("Confirm Disable", "This will move all mods to the 'Temporarily Disabled Mods' folder located in your Cyberpunk 2077 directory. Proceed?"):
         return
     current_dir = os.getcwd()
     temp_disabled_path = os.path.join(current_dir, TEMP_DISABLED_DIR)
@@ -250,7 +253,7 @@ def disable_all_mods():
     update_mod_count_label()
 
 def enable_all_mods():
-    """Enable all mods by moving them back from 'Temporarily Disabled Mods' to original locations."""
+    # Enable all mods by moving them back from 'Temporarily Disabled Mods' to original locations
     if is_game_running():
         messagebox.showwarning("Game Running", "Cannot modify mods while Cyberpunk 2077 is running!")
         return
@@ -297,7 +300,7 @@ def enable_all_mods():
     update_mod_count_label()
 
 def cleanup_temp_disabled_folder(current_dir):
-    """Remove the Temporarily Disabled Mods folder and its empty subdirectories if no mods remain."""
+    # Remove the Temporarily Disabled Mods folder and its empty subdirectories if no mods remain
     temp_disabled_path = os.path.join(current_dir, TEMP_DISABLED_DIR)
     if not os.path.exists(temp_disabled_path):
         return
@@ -326,7 +329,7 @@ def cleanup_temp_disabled_folder(current_dir):
         print(f"Failed to remove {TEMP_DISABLED_DIR} folder: {str(e)}")
 
 def view_core_mods_status(current_dir):
-    """Check if core dependency mods are installed and retrieve their versions."""
+    # Check if core dependency mods are installed and retrieve their versions
     status_data = {}
     for mod_name, info in CORE_DEPENDENCIES.items():
         is_installed = False
@@ -359,7 +362,7 @@ def view_core_mods_status(current_dir):
     return status_data
 
 def view_mod_list():
-    """Open a window to view and manage individual mods with a dropdown to filter by directory, excluding EquipmentEx files."""
+    # Open a window to view and manage individual mods with a dropdown to filter by directory, excluding EquipmentEx files
     global mod_window_open
     if mod_window_open:
         messagebox.showinfo("Cyberpunk 2077 Mod List Tool", "Only one View Mod List window can be open at a time.")
@@ -462,7 +465,7 @@ def view_mod_list():
     disabled_scrollbar.config(command=disabled_listbox.yview)
 
     def update_mod_list(window, var, mod_dict):
-        """Update the mod list based on the selected directory."""
+        # Update the mod list based on the selected directory
         selected_dir = var.get()
         enabled_listbox.delete(0, tk.END)
         disabled_listbox.delete(0, tk.END)
@@ -565,18 +568,18 @@ def view_mod_list():
     enable_selected_button.bind("<Enter>", lambda e: enable_selected_button.config(bg="#00CC00", fg="black"))
     enable_selected_button.bind("<Leave>", lambda e: enable_selected_button.config(bg="#00FF00", fg="black"))
 
-    # Initial population of the mod list
+    # Calculates the initial mod list
     update_mod_list(mod_window, selected_dir_var, mods)
     mod_window_open = True
 
 def on_mod_window_close(mod_window):
-    """Handle closing of the View Mod List window."""
+    # Handle closing of the View Mod List window
     global mod_window_open
     mod_window_open = False
     mod_window.destroy()
 
 def view_core_mods():
-    """Open a window to view the status of core dependency mods."""
+    # Open a window to view the status of the core mods
     global core_window_open
     if core_window_open:
         messagebox.showinfo("Window Limit", "Only one Core Mods Status window can be open at a time.")
@@ -604,7 +607,6 @@ def view_core_mods():
         except tk.TclError as e:
             print(f"Warning: Failed to set icon for Core Mods Status window from '{ICON_PATH}': {e}. Using default icon.")
 
-    # Main frame without scrollbar
     main_frame = tk.Frame(core_window, bg="#000000")
     main_frame.pack(expand=True)
 
@@ -612,7 +614,7 @@ def view_core_mods():
     previous_status = {}
 
     def update_status():
-        """Update the Core Mods Status window with current status."""
+        # Update the Core Mods Status window with current status
         nonlocal previous_status
 
         # Check current status
@@ -671,29 +673,29 @@ def view_core_mods():
     core_window_open = True
 
 def on_core_window_close(core_window):
-    """Handle closing of the Core Mods window."""
+    # Handle closing of the Core Mods window
     global core_window_open
     core_window_open = False
     core_window.destroy()
 
 class ModChangeHandler(FileSystemEventHandler):
-    """Handle file system events for mod directories."""
+    # Handle file system events for mod directories
     def on_created(self, event):
-        """Called when a file or directory is created."""
+        # Called when a file or directory is created
         if not event.is_directory:  # Only count files, not directories (except for CET mods)
             update_mod_count_label()
         elif os.path.normpath(os.path.relpath(event.src_path, current_dir)).startswith("bin/x64/plugins/cyber_engine_tweaks/mods"):
             update_mod_count_label()
 
     def on_deleted(self, event):
-        """Called when a file or directory is deleted."""
+        # Called when a file or directory is deleted
         if not event.is_directory:  # Only count files, not directories (except for CET mods)
             update_mod_count_label()
         elif os.path.normpath(os.path.relpath(event.src_path, current_dir)).startswith("bin/x64/plugins/cyber_engine_tweaks/mods"):
             update_mod_count_label()
 
     def on_moved(self, event):
-        """Called when a file or directory is moved or renamed."""
+        # Called when a file or directory is moved or renamed
         if not event.is_directory:  # Only count files, not directories (except for CET mods)
             update_mod_count_label()
         elif os.path.normpath(os.path.relpath(event.src_path, current_dir)).startswith("bin/x64/plugins/cyber_engine_tweaks/mods") or \
@@ -701,7 +703,7 @@ class ModChangeHandler(FileSystemEventHandler):
             update_mod_count_label()
 
 def start_mod_watcher():
-    """Start watching mod directories for changes."""
+    # Looks for changes to the mod directories
     global mod_observer
     current_dir = os.getcwd()
     event_handler = ModChangeHandler()
@@ -714,7 +716,7 @@ def start_mod_watcher():
     return mod_observer
 
 def update_mod_count_label():
-    """Update the mod count label based on current enabled mods, excluding EquipmentEx files."""
+    # Updates the mod count label based on current enabled mods, excluding core mods
     current_dir = os.getcwd()
     mod_count = 0
     for mod_dir in MOD_DIRECTORIES:
@@ -739,7 +741,7 @@ def update_mod_count_label():
     print(f"Updated mod count: {mod_count}")
 
 def extract_log_errors(log_path):
-    """Extract lines containing potential errors from a log file."""
+    # Extract lines containing potential errors from a log file
     error_keywords = ["error", "failed", "exception", "warning"]
     errors = []
     if not os.path.exists(log_path):
@@ -756,7 +758,7 @@ def extract_log_errors(log_path):
     return errors
 
 def check_log_errors(current_dir):
-    """Check for errors in log files and return True if errors are found."""
+    # Check for errors in log files and return True if errors are found
     log_files = {
         "ArchiveXL": os.path.join(current_dir, "red4ext", "plugins", "ArchiveXL", "ArchiveXL.log"),
         "Codeware": os.path.join(current_dir, "red4ext", "plugins", "Codeware", "Codeware.log"),
@@ -770,7 +772,7 @@ def check_log_errors(current_dir):
     return bool(log_errors)
 
 def export_mods():
-    """Export selected mod folders to a ZIP file with a progress bar."""
+    # Export selected mod folders to a ZIP file with a progress bar
     if is_game_running():
         messagebox.showwarning("Game Running", "Cannot export mods while Cyberpunk 2077 is running!")
         return
@@ -825,7 +827,7 @@ def export_mods():
     selection_window.wait_window()
 
 def _export_with_progress(selected_folders):
-    """Helper function to handle the export process with progress bar."""
+    # Helper function to handle the export process with progress bar
     current_dir = os.getcwd()
     default_filename = f"Mod_Preset_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     save_path = filedialog.asksaveasfilename(
@@ -988,12 +990,10 @@ def run_script():
                 break
 
     with open('Cyberpunk 2077 Mod List.txt', 'w') as file:
-        file.write(f"Cyberpunk 2077 Mod List Tool by Sammmy1036\n")
-        file.write(f"Tool Version: 1.0.0.4\n")
+        file.write(f"Cyberpunk 2077 Mod List Tool v{tool_Version} by Sammmy1036\n")
         file.write(f"Nexus Mod Page https://www.nexusmods.com/cyberpunk2077/mods/20113\n")
         file.write(f"List created on {now.strftime('%B %d, %Y at %I:%M:%S %p')}\n")
-        file.write(f"Game Version: {game_version}\n")
-        file.write(f"Phantom Liberty DLC Installed: {'Yes' if phantom_liberty_installed else 'No'}\n")
+        file.write(f"Game Version: {game_version} | Phantom Liberty DLC Installed: {'Yes' if phantom_liberty_installed else 'No'}\n")
         file.write(f"All Core Mods Installed: {'Yes' if all_core_mods_installed else 'No'}\n")
         file.write(f"Total Mods Installed: {mod_count}\n")
         file.write("-" * 120 + "\n")
@@ -1238,12 +1238,12 @@ link_canvas.bind("<Button-1>", open_url)
 
 version_canvas = tk.Canvas(window, width=100, height=20, highlightthickness=0, bg="#000000", bd=0)
 version_canvas.place(relx=0.5, y=790, anchor="center")
-version_canvas.create_text(50, 10, text="Version 1.0.0.4", font=("Arial", 10), fill="white")
+version_canvas.create_text(50, 10, text=f"Version {tool_Version}", font=("Arial", 10), fill="white")
 
-mod_count_label = tk.Label(window, text="Total Mods: 0", font=("Arial", 10), fg="white", bg="#000000")
+mod_count_label = tk.Label(window, text="Total Mods: Unknown", font=("Arial", 10), fg="white", bg="#000000")
 game_version_label = tk.Label(window, text="Game Version: Unknown", font=("Arial", 10), fg="white", bg="#000000")
-log_errors_label = tk.Label(window, text="Log Errors Detected: No", font=("Arial", 10), fg="white", bg="#000000")
-pl_dlc_label = tk.Label(window, text="Core Mods Installed: No", font=("Arial", 10), fg="white", bg="#000000")
+log_errors_label = tk.Label(window, text="Log Errors Detected: Unknown", font=("Arial", 10), fg="white", bg="#000000")
+pl_dlc_label = tk.Label(window, text="Core Mods Installed: Unknown", font=("Arial", 10), fg="white", bg="#000000")
 
 if os.path.exists(os.path.join(current_dir, "archive")):
     mod_count_label.place(x=10, y=760)
