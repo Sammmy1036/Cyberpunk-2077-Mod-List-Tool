@@ -410,6 +410,27 @@ def view_core_mods_status(current_dir):
         print(f"Debug: Checking {mod_name} - Exists: {is_installed} - Version: {version if version else 'N/A'} - Paths: {paths}")
     return status_data
 
+def check_all_core_mods_installed(current_dir):
+    """Check if all required files for each core mod are installed."""
+    core_mods_status = {}
+    missing_mods = []
+    
+    for mod_name, info in CORE_DEPENDENCIES.items():
+        paths = info["path"] if isinstance(info["path"], list) else [info["path"]]
+        # For mods requiring all files (like ArchiveXL, Codeware, etc.), check all paths
+        if mod_name in ["ArchiveXL", "Codeware", "EquipmentEx", "RED4ext", "Redscript", "TweakXL"]:
+            is_installed = all(os.path.exists(os.path.join(current_dir, path)) for path in paths)
+        else:
+            # For mods like Cyber Engine Tweaks, any file presence is enough
+            is_installed = any(os.path.exists(os.path.join(current_dir, path)) for path in paths)
+        
+        core_mods_status[mod_name] = is_installed
+        if not is_installed:
+            missing_mods.append(mod_name)
+    
+    all_installed = all(core_mods_status.values())
+    return all_installed, missing_mods
+
 def view_mod_list():
     # Open a window to view and manage individual mods with a dropdown to filter by directory, excluding EquipmentEx files
     global mod_window_open
@@ -1029,7 +1050,6 @@ def run_script():
         game_version_label.place_forget()
         log_errors_label.place_forget()
         pl_dlc_label.place_forget()
-        include_logs_checkbox.place_forget()
         return False
 
     include_logs_checkbox.place(relx=0.5, y=450, anchor="center")
@@ -1079,24 +1099,22 @@ def run_script():
         if errors:
             log_errors[log_name] = errors
 
-    all_core_mods_installed = True
-    for mod_name, info in CORE_DEPENDENCIES.items():
-        paths = info["path"] if isinstance(info["path"], list) else [info["path"]]
-        if mod_name == "EquipmentEx":
-            if not all(os.path.exists(os.path.join(current_dir, path)) for path in paths):
-                all_core_mods_installed = False
-                break
-        else:
-            if not any(os.path.exists(os.path.join(current_dir, path)) for path in paths):
-                all_core_mods_installed = False
-                break
+    # Check all core mods and get missing ones
+    all_core_mods_installed, missing_core_mods = check_all_core_mods_installed(current_dir)
 
     with open('Cyberpunk 2077 Mod List.txt', 'w') as file:
         file.write(f"Cyberpunk 2077 Mod List Tool v{tool_Version} by Sammmy1036\n")
         file.write(f"Nexus Mod Page https://www.nexusmods.com/cyberpunk2077/mods/20113\n")
         file.write(f"List created on {now.strftime('%B %d, %Y at %I:%M:%S %p')}\n")
         file.write(f"Game Version: {game_version} | Phantom Liberty DLC Installed: {'Yes' if phantom_liberty_installed else 'No'}\n")
-        file.write(f"All Core Mods Installed: {'Yes' if all_core_mods_installed else 'No'}\n")
+        
+        # Write core mods status with missing details if applicable
+        if all_core_mods_installed:
+            file.write("All Core Mods Installed: Yes\n")
+        else:
+            missing_str = ", ".join(missing_core_mods)
+            file.write(f"All Core Mods Installed: No. Missing {missing_str}\n")
+        
         file.write(f"Total Mods Installed: {mod_count}\n")
         file.write("-" * 120 + "\n")
 
