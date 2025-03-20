@@ -41,19 +41,24 @@ Additional data previously exclusive to the .txt output—such as the number of 
 ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **INSTALLATION**
+
 Unlike previous versions, the tool no longer requires placement in the game directory. You can now set the game directory at launch of the application or via the "Settings" option within the tool. The path will be saved to the Windows Registry for persistence.
 
 ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-HOW TO USE
-Compiling Mod and Log Lists
+**HOW TO USE**
+
+**Compiling Mod and Log Lists**
+
 Launch the application by double-clicking Cyberpunk 2077 Mod List Tool.exe.
 If you prefer not to include log files in the output, uncheck the "Include Logs" checkbox (checked by default).
 Click Start. The tool will generate Cyberpunk 2077 Mod List.txt in the same directory as the executable, containing your mod list, logs (if selected), and game information.
 Setting the Game Directory
 If the tool is not in your game directory or you wish to use a different location, click Settings.
 Select your Cyberpunk 2077 root directory (e.g., where Cyberpunk2077.exe resides) and confirm. The path will be saved for future use.
-Core Mods Status
+
+**Core Mods Status**
+
 Click Core Mods Status to open a window detailing the following dependencies:
 ArchiveXL: Displays version and installation status of required files.
 Codeware: Displays version and installation status of required files.
@@ -62,33 +67,42 @@ EquipmentEx: Displays installation status (no version due to lack of references)
 RED4ext: Displays version and installation status of required files.
 Redscript: Displays installation status (no version due to lack of references).
 TweakXL: Displays version and installation status of required files.
+
 Core mods are excluded from total mod counts, remain untouched during enable/disable operations, and are not listed in the "View Mod List" window.
 Missing core mods include a clickable "Install" button linking to their Nexus Mods page.
-More Options - Enable/Disable All Mods
-Disable All Mods: Creates a Temporarily Disabled Mods folder in your game directory and moves all non-core mods there.
 
-Enable All Mods: Restores all mods from the Temporarily Disabled Mods folder to their original locations, deleting the folder if empty.
-More Options - View Mod List
+**More Options - Enable/Disable All Mods**
 
+Disable All Mods: 
+Creates a Temporarily Disabled Mods folder in your game directory and moves all non-core mods there.
+
+Enable All Mods: 
+Restores all mods from the Temporarily Disabled Mods folder to their original locations, deleting the folder if empty.
+
+**More Options - View Mod List**
 Opens a window listing all installed and disabled mods.
 
 Features a search bar and directory filter to refine the view.
 
-Allows individual mod management:
+**Allows individual mod management:**
+
 Example: Select MyMod.archive from the "Enabled Mods" list (left side), click Disable Selected, and it moves to Temporarily Disabled Mods. Disabled mods appear on the right side for re-enabling.
-More Options - Export Mod Preset
+
+**More Options - Export Mod Preset** 
 Click Export Mod Preset to open a folder selection window.
 Check the boxes for mod folders to export (e.g., archive/pc/mod, r6/scripts) and click Confirm.
 Choose a save location and filename in the "Save Mod Preset As" dialog, then click Save.
 A progress bar tracks the export, followed by a completion notification.
 
-________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **UNINSTALL**
+
 Simply delete Cyberpunk 2077 Mod List Tool.exe from its location. If using a custom game directory, you may also clear the registry entry under HKEY_CURRENT_USER\Software\Cyberpunk2077ModListTool (optional).
 
-________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **PLEASE NOTE**
+
 Antivirus Flags: Windows Defender or other antivirus software may flag this tool as a potentially unwanted program or virus due to its lack of a digital signature from a recognized publisher. The application is safe and has been submitted to Microsoft for whitelisting, which should resolve this over time.
 Requirements: The tool must have access to a valid Cyberpunk 2077 directory (set via Settings if not placed there) to function fully.
