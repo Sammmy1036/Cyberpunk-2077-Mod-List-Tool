@@ -65,12 +65,19 @@ Select your Cyberpunk 2077 root directory (e.g., where Cyberpunk2077.exe resides
 **Core Mods Status**
 
 Click Core Mods Status to open a window detailing the following dependencies:
+
 -ArchiveXL: Displays version and installation status of required files.
+
 -Codeware: Displays version and installation status of required files.
+
 -Cyber Engine Tweaks: Displays version (from log, if available) and installation status.
+
 -EquipmentEx: Displays installation status (no version due to lack of references).
+
 -RED4ext: Displays version and installation status of required files.
+
 -Redscript: Displays installation status (no version due to lack of references).
+
 -TweakXL: Displays version and installation status of required files.
 
 Core mods are excluded from total mod counts, remain untouched during enable/disable operations, and are not listed in the "View Mod List" window.
