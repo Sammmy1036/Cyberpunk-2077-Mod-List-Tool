@@ -63,6 +63,7 @@ If the tool is not in your game directory or you wish to use a different locatio
 Select your Cyberpunk 2077 root directory (e.g., where Cyberpunk2077.exe resides) and confirm. The path will be saved for future use.
 
 <br />
+
 **Core Mods Status**
 
 Click Core Mods Status to open a window detailing the following dependencies:
