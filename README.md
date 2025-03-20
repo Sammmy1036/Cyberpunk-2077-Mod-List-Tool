@@ -99,15 +99,16 @@ Restores all mods from the Temporarily Disabled Mods folder to their original lo
 <br />
 
 **More Options - View Mod List**
-Opens a window listing all installed and disabled mods.
-
-Features a search bar and directory filter to refine the view.
+Opens a window listing all installed and disabled mods and features a search bar and directory filter to refine the view.
 
 <br />
-**Allows individual mod management:**
+
+Allows individual mod management:
 
 Example: Select MyMod.archive from the "Enabled Mods" list (left side), click Disable Selected, and it moves to Temporarily Disabled Mods. Disabled mods appear on the right side for re-enabling.
+
 <br />
+
 **More Options - Export Mod Preset** 
 
 Click Export Mod Preset to open a folder selection window.
