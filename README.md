@@ -19,6 +19,7 @@ Generates lists of mods from key directories:
 -Archive mods in Cyberpunk 2077\archive\pc\mod.
 
 
+
 Optionally includes the most recent logs from ArchiveXL, Codeware, and TweakXL (via a checkbox, enabled by default).
 
 Displays the current game version and Phantom Liberty DLC installation status.
