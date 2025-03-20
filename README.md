@@ -1,14 +1,14 @@
 # Cyberpunk 2077 Mod List Tool
 
-**DESCRIPTION**
+# DESCRIPTION
 
 The Cyberpunk 2077 Mod List Tool is a utility designed to catalog all mod files and folders currently installed for Cyberpunk 2077, alongside compiling log data, game version details, and Phantom Liberty DLC status. The tool outputs this information into a .txt file for easy reference.
 
 Simplifies the process of documenting extensive mod collections, logs, and critical game information. It provides a streamlined solution for users managing hundreds of mods, enabling them to share detailed troubleshooting data with mod authors and community supporters efficiently.
 
-________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**KEY FEATURES**
+# KEY FEATURES
 
 Generates lists of mods from key directories:
 
@@ -40,13 +40,13 @@ Additional data previously exclusive to the .txt output—such as the number of 
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**INSTALLATION**
+# INSTALLATION
 
 Unlike previous versions, the tool no longer requires placement in the game directory. You can now set the game directory at launch of the application or via the "Settings" option within the tool. The path will be saved to the Windows Registry for persistence.
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**HOW TO USE**
+# HOW TO USE
 
 **Compiling Mod and Log Lists**
 
@@ -61,6 +61,7 @@ Click Start. The tool will generate Cyberpunk 2077 Mod List.txt in the same dire
 If the tool is not in your game directory or you wish to use a different location, click Settings.
 
 Select your Cyberpunk 2077 root directory (e.g., where Cyberpunk2077.exe resides) and confirm. The path will be saved for future use.
+
 
 **Core Mods Status**
 
@@ -84,6 +85,7 @@ Core mods are excluded from total mod counts, remain untouched during enable/dis
 
 Missing core mods include a clickable "Install" button linking to their Nexus Mods page.
 
+
 **More Options - Enable/Disable All Mods**
 
 Disable All Mods: 
@@ -96,6 +98,7 @@ Restores all mods from the Temporarily Disabled Mods folder to their original lo
 Opens a window listing all installed and disabled mods.
 
 Features a search bar and directory filter to refine the view.
+
 
 **Allows individual mod management:**
 
@@ -113,7 +116,7 @@ A progress bar tracks the export, followed by a completion notification.
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**UNINSTALL**
+# UNINSTALL
 
 Simply delete Cyberpunk 2077 Mod List Tool.exe from its location. 
 
@@ -121,10 +124,12 @@ If using a custom game directory, you may also clear the registry entry under HK
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**PLEASE NOTE**
+# PLEASE NOTE
 
 Antivirus Flags: Windows Defender or other antivirus software may flag this tool as a potentially unwanted program or virus due to its lack of a digital signature from a recognized publisher. The application is safe and has been submitted to Microsoft for whitelisting, which should resolve this over time.
 
-**REQUIREMENTS**
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+
+# REQUIREMENTS
 
 The tool must have access to a valid Cyberpunk 2077 directory (set via Settings if not placed there) to function fully.
