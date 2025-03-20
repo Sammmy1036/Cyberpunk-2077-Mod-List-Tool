@@ -26,8 +26,10 @@ Additional data previously exclusive to the .txt output—such as the number of 
 ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **INSTALLATION**
-Download the tool and place Cyberpunk 2077 Mod List Tool.exe in your Cyberpunk 2077 game directory (e.g., C:\Steam\steamapps\common\Cyberpunk 2077).
-Note: Unlike previous versions, the tool no longer requires placement in the game directory. You can now set the game directory via the "Settings" option within the tool, with the path saved to the Windows Registry for persistence.
+Unlike previous versions, the tool no longer requires placement in the game directory. You can now set the game directory at launch of the application or via the "Settings" option within the tool. The path will be saved to the Windows Registry for persistence.
+
+________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+
 HOW TO USE
 Compiling Mod and Log Lists
 Launch the application by double-clicking Cyberpunk 2077 Mod List Tool.exe.
@@ -49,10 +51,14 @@ Core mods are excluded from total mod counts, remain untouched during enable/dis
 Missing core mods include a clickable "Install" button linking to their Nexus Mods page.
 More Options - Enable/Disable All Mods
 Disable All Mods: Creates a Temporarily Disabled Mods folder in your game directory and moves all non-core mods there.
+
 Enable All Mods: Restores all mods from the Temporarily Disabled Mods folder to their original locations, deleting the folder if empty.
 More Options - View Mod List
+
 Opens a window listing all installed and disabled mods.
+
 Features a search bar and directory filter to refine the view.
+
 Allows individual mod management:
 Example: Select MyMod.archive from the "Enabled Mods" list (left side), click Disable Selected, and it moves to Temporarily Disabled Mods. Disabled mods appear on the right side for re-enabling.
 More Options - Export Mod Preset
