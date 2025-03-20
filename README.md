@@ -7,20 +7,31 @@ This tool simplifies the process of documenting extensive mod collections, logs,
 
 ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**Key Features
-**Mod Compilation: Generates lists of mods from key directories:
+**Key Features**
+Generates lists of mods from key directories:
+
 Cyber Engine Tweaks (CET) mods in Cyberpunk 2077\bin\x64\plugins\cyber_engine_tweaks\mods.
+
 R6 scripts and tweaks in Cyberpunk 2077\r6.
+
 Archive mods in Cyberpunk 2077\archive\pc\mod.
-Log Compilation: Optionally includes the most recent logs from ArchiveXL, Codeware, and TweakXL (via a checkbox, enabled by default).
-Game Information: Displays the current game version and Phantom Liberty DLC installation status.
-Error Detection: Highlights potential errors in log files for review.
-Core Mods Status: Monitors and displays the installation status and versions of essential dependencies (ArchiveXL, Codeware, Cyber Engine Tweaks, EquipmentEx, RED4ext, Redscript, TweakXL), with real-time updates in the GUI.
-Mod Management: Offers features to temporarily disable or enable mods (collectively or individually) while protecting core mods from modification.
-Mod Backup / Preset Export: Allows exporting selected mod folders to a .zip file with a progress bar.
-Dynamic GUI: Displays real-time data on total installed mods, game version, log error detection, and core mod status upon launch.
-Real-Time Monitoring: Tracks mod directory changes (additions, deletions, moves) and updates the mod count dynamically.
-Enhanced Usability
+
+Optionally includes the most recent logs from ArchiveXL, Codeware, and TweakXL (via a checkbox, enabled by default).
+
+Displays the current game version and Phantom Liberty DLC installation status.
+
+Highlights potential errors in log files for review.
+
+Monitors and displays the installation status and versions of essential dependencies (ArchiveXL, Codeware, Cyber Engine Tweaks, EquipmentEx, RED4ext, Redscript, TweakXL), with real-time updates in the GUI.
+
+Offers features to temporarily disable or enable mods (collectively or individually) while protecting core mods from modification.
+
+Allows exporting selected mod folders to a .zip file with a progress bar.
+
+Displays real-time data on total installed mods, game version, log error detection, and core mod status upon launch.
+
+Tracks mod directory changes (additions, deletions, moves) and updates the mod count dynamically.
+
 Additional data previously exclusive to the .txt output—such as the number of installed mods, game version, log error detection, and core mod status—is now integrated into the graphical user interface (GUI) for immediate visibility.
 
 ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
