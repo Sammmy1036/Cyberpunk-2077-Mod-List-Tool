@@ -82,6 +82,8 @@ Click Core Mods Status to open a window detailing the following dependencies:
 
 -TweakXL: Displays version and installation status of required files.
 
+<br />
+
 Core mods are excluded from total mod counts, remain untouched during enable/disable operations, and are not listed in the "View Mod List" window.
 
 Missing core mods include a clickable "Install" button linking to their Nexus Mods page.
