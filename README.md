@@ -101,6 +101,7 @@ Restores all mods from the Temporarily Disabled Mods folder to their original lo
 <br />
 
 **More Options - View Mod List**
+
 Opens a window listing all installed and disabled mods and features a search bar and directory filter to refine the view.
 
 <br />
