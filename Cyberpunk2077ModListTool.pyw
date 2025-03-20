@@ -113,7 +113,7 @@ REGISTRY_KEY = r"Software\Cyberpunk2077ModListTool"
 REGISTRY_VALUE = "GameDir"
 
 def save_game_dir_to_registry():
-    """Save the game_dir to the Windows Registry."""
+    # Save the game_dir to the Windows Registry
     global game_dir
     try:
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, REGISTRY_KEY)
@@ -124,7 +124,7 @@ def save_game_dir_to_registry():
         print(f"Failed to save game_dir to registry: {e}")
 
 def load_game_dir_from_registry():
-    """Load the game_dir from the Windows Registry."""
+    # Load the game_dir from the Windows Registry
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_KEY, 0, winreg.KEY_READ)
         value, _ = winreg.QueryValueEx(key, REGISTRY_VALUE)
