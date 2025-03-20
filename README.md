@@ -1,7 +1,5 @@
 # Cyberpunk 2077 Mod List Tool
 
-# DESCRIPTION
-
 The Cyberpunk 2077 Mod List Tool is a utility designed to catalog all mod files and folders currently installed for Cyberpunk 2077, alongside compiling log data, game version details, and Phantom Liberty DLC status. The tool outputs this information into a .txt file for easy reference.
 
 Simplifies the process of documenting extensive mod collections, logs, and critical game information. It provides a streamlined solution for users managing hundreds of mods, enabling them to share detailed troubleshooting data with mod authors and community supporters efficiently.
