@@ -38,37 +38,43 @@ Tracks mod directory changes (additions, deletions, moves) and updates the mod c
 
 Additional data previously exclusive to the .txt output—such as the number of installed mods, game version, log error detection, and core mod status—is now integrated into the graphical user interface (GUI) for immediate visibility.
 
-________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **INSTALLATION**
 
 Unlike previous versions, the tool no longer requires placement in the game directory. You can now set the game directory at launch of the application or via the "Settings" option within the tool. The path will be saved to the Windows Registry for persistence.
 
-________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **HOW TO USE**
 
 **Compiling Mod and Log Lists**
 
 Launch the application by double-clicking Cyberpunk 2077 Mod List Tool.exe.
+
 If you prefer not to include log files in the output, uncheck the "Include Logs" checkbox (checked by default).
+
 Click Start. The tool will generate Cyberpunk 2077 Mod List.txt in the same directory as the executable, containing your mod list, logs (if selected), and game information.
-Setting the Game Directory
+
+**Setting the Game Directory**
+
 If the tool is not in your game directory or you wish to use a different location, click Settings.
+
 Select your Cyberpunk 2077 root directory (e.g., where Cyberpunk2077.exe resides) and confirm. The path will be saved for future use.
 
 **Core Mods Status**
 
 Click Core Mods Status to open a window detailing the following dependencies:
-ArchiveXL: Displays version and installation status of required files.
-Codeware: Displays version and installation status of required files.
-Cyber Engine Tweaks: Displays version (from log, if available) and installation status.
-EquipmentEx: Displays installation status (no version due to lack of references).
-RED4ext: Displays version and installation status of required files.
-Redscript: Displays installation status (no version due to lack of references).
-TweakXL: Displays version and installation status of required files.
+-ArchiveXL: Displays version and installation status of required files.
+-Codeware: Displays version and installation status of required files.
+-Cyber Engine Tweaks: Displays version (from log, if available) and installation status.
+-EquipmentEx: Displays installation status (no version due to lack of references).
+-RED4ext: Displays version and installation status of required files.
+-Redscript: Displays installation status (no version due to lack of references).
+-TweakXL: Displays version and installation status of required files.
 
 Core mods are excluded from total mod counts, remain untouched during enable/disable operations, and are not listed in the "View Mod List" window.
+
 Missing core mods include a clickable "Install" button linking to their Nexus Mods page.
 
 **More Options - Enable/Disable All Mods**
