@@ -125,6 +125,6 @@ ________________________________________________________________________________
 
 Antivirus Flags: Windows Defender or other antivirus software may flag this tool as a potentially unwanted program or virus due to its lack of a digital signature from a recognized publisher. The application is safe and has been submitted to Microsoft for whitelisting, which should resolve this over time.
 
-**Requirements**
+**REQUIREMENTS**
 
 The tool must have access to a valid Cyberpunk 2077 directory (set via Settings if not placed there) to function fully.
