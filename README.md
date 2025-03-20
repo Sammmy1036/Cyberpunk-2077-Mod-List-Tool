@@ -53,14 +53,14 @@ Launch the application by double-clicking Cyberpunk 2077 Mod List Tool.exe.
 If you prefer not to include log files in the output, uncheck the "Include Logs" checkbox (checked by default).
 
 Click Start. The tool will generate Cyberpunk 2077 Mod List.txt in the same directory as the executable, containing your mod list, logs (if selected), and game information.
-
+<br />
 **Setting the Game Directory**
 
 If the tool is not in your game directory or you wish to use a different location, click Settings.
 
 Select your Cyberpunk 2077 root directory (e.g., where Cyberpunk2077.exe resides) and confirm. The path will be saved for future use.
 
-
+<br />
 **Core Mods Status**
 
 Click Core Mods Status to open a window detailing the following dependencies:
@@ -83,7 +83,7 @@ Core mods are excluded from total mod counts, remain untouched during enable/dis
 
 Missing core mods include a clickable "Install" button linking to their Nexus Mods page.
 
-
+<br />
 **More Options - Enable/Disable All Mods**
 
 Disable All Mods: 
@@ -91,17 +91,17 @@ Creates a Temporarily Disabled Mods folder in your game directory and moves all 
 
 Enable All Mods: 
 Restores all mods from the Temporarily Disabled Mods folder to their original locations, deleting the folder if empty.
-
+<br />
 **More Options - View Mod List**
 Opens a window listing all installed and disabled mods.
 
 Features a search bar and directory filter to refine the view.
 
-
+<br />
 **Allows individual mod management:**
 
 Example: Select MyMod.archive from the "Enabled Mods" list (left side), click Disable Selected, and it moves to Temporarily Disabled Mods. Disabled mods appear on the right side for re-enabling.
-
+<br />
 **More Options - Export Mod Preset** 
 
 Click Export Mod Preset to open a folder selection window.
