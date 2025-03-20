@@ -1,113 +1,73 @@
 # Cyberpunk 2077 Mod List Tool
 **DESCRIPTION**
+The Cyberpunk 2077 Mod List Tool is a utility designed to catalog all mod files and folders currently installed for Cyberpunk 2077, alongside compiling log data, game version details, and Phantom Liberty DLC status. The tool outputs this information into a .txt file for easy reference.
 
-This tool can be used to list all mod file and folder names currently installed for Cyberpunk 2077 alongside compiling log lists, Game Version, and Phantom Liberty DLC information. Compiles data into a .txt file.
+**Purpose**
+This tool simplifies the process of documenting extensive mod collections, logs, and critical game information. It provides a streamlined solution for users managing hundreds of mods, enabling them to share detailed troubleshooting data with mod authors and community supporters efficiently.
 
-Why? To provide users who have hundreds of mods a quick and easy way to list all mods, logs and pertinent game information in a format which can easily be provided to mod authors and community supporters to assist with troubleshooting. 
+________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-Compiles a list of Cyber Engine Tweaks (CET) mods located in the Cyberpunk 2077\bin\x64\plugins\cyber_engine_tweaks\mods directory. 
+**Key Features
+**Mod Compilation: Generates lists of mods from key directories:
+Cyber Engine Tweaks (CET) mods in Cyberpunk 2077\bin\x64\plugins\cyber_engine_tweaks\mods.
+R6 scripts and tweaks in Cyberpunk 2077\r6.
+Archive mods in Cyberpunk 2077\archive\pc\mod.
+Log Compilation: Optionally includes the most recent logs from ArchiveXL, Codeware, and TweakXL (via a checkbox, enabled by default).
+Game Information: Displays the current game version and Phantom Liberty DLC installation status.
+Error Detection: Highlights potential errors in log files for review.
+Core Mods Status: Monitors and displays the installation status and versions of essential dependencies (ArchiveXL, Codeware, Cyber Engine Tweaks, EquipmentEx, RED4ext, Redscript, TweakXL), with real-time updates in the GUI.
+Mod Management: Offers features to temporarily disable or enable mods (collectively or individually) while protecting core mods from modification.
+Mod Backup / Preset Export: Allows exporting selected mod folders to a .zip file with a progress bar.
+Dynamic GUI: Displays real-time data on total installed mods, game version, log error detection, and core mod status upon launch.
+Real-Time Monitoring: Tracks mod directory changes (additions, deletions, moves) and updates the mod count dynamically.
+Enhanced Usability
+Additional data previously exclusive to the .txt output—such as the number of installed mods, game version, log error detection, and core mod status—is now integrated into the graphical user interface (GUI) for immediate visibility.
 
-Compiles a list of r6 scripts & tweaks in the Cyberpunk 2077\r6 directory. 
-
-Compiles a list of archive mods located in the Cyberpunk 2077\archive\pc\mod directory. 
-
-Compiles most recent ArchiveXL, Codeware, and TweakXL logs at end of file. Now with optional checkbox. 
-
-Provides current Game Version. 
-
-Provides information if Phantom Liberty DLC is installed.
-
-Notifies of errors if present in the log files. 
-
-Mod management features, including temporarily disabling and enabling all mods or individually. 
-
-Mod Backup / Preset Exporting feature.
-
-Additional elements which were displayed in the .txt output file are now displayed in the GUI when launching the application, such as (Number of installed mods, Game Version, Log Error Detection, and Phantom Liberty DLC info). 
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **INSTALLATION**
+Download the tool and place Cyberpunk 2077 Mod List Tool.exe in your Cyberpunk 2077 game directory (e.g., C:\Steam\steamapps\common\Cyberpunk 2077).
+Note: Unlike previous versions, the tool no longer requires placement in the game directory. You can now set the game directory via the "Settings" option within the tool, with the path saved to the Windows Registry for persistence.
+HOW TO USE
+Compiling Mod and Log Lists
+Launch the application by double-clicking Cyberpunk 2077 Mod List Tool.exe.
+If you prefer not to include log files in the output, uncheck the "Include Logs" checkbox (checked by default).
+Click Start. The tool will generate Cyberpunk 2077 Mod List.txt in the same directory as the executable, containing your mod list, logs (if selected), and game information.
+Setting the Game Directory
+If the tool is not in your game directory or you wish to use a different location, click Settings.
+Select your Cyberpunk 2077 root directory (e.g., where Cyberpunk2077.exe resides) and confirm. The path will be saved for future use.
+Core Mods Status
+Click Core Mods Status to open a window detailing the following dependencies:
+ArchiveXL: Displays version and installation status of required files.
+Codeware: Displays version and installation status of required files.
+Cyber Engine Tweaks: Displays version (from log, if available) and installation status.
+EquipmentEx: Displays installation status (no version due to lack of references).
+RED4ext: Displays version and installation status of required files.
+Redscript: Displays installation status (no version due to lack of references).
+TweakXL: Displays version and installation status of required files.
+Core mods are excluded from total mod counts, remain untouched during enable/disable operations, and are not listed in the "View Mod List" window.
+Missing core mods include a clickable "Install" button linking to their Nexus Mods page.
+More Options - Enable/Disable All Mods
+Disable All Mods: Creates a Temporarily Disabled Mods folder in your game directory and moves all non-core mods there.
+Enable All Mods: Restores all mods from the Temporarily Disabled Mods folder to their original locations, deleting the folder if empty.
+More Options - View Mod List
+Opens a window listing all installed and disabled mods.
+Features a search bar and directory filter to refine the view.
+Allows individual mod management:
+Example: Select MyMod.archive from the "Enabled Mods" list (left side), click Disable Selected, and it moves to Temporarily Disabled Mods. Disabled mods appear on the right side for re-enabling.
+More Options - Export Mod Preset
+Click Export Mod Preset to open a folder selection window.
+Check the boxes for mod folders to export (e.g., archive/pc/mod, r6/scripts) and click Confirm.
+Choose a save location and filename in the "Save Mod Preset As" dialog, then click Save.
+A progress bar tracks the export, followed by a completion notification.
 
-Place application in your Cyberpunk 2077 game directory (e.g. C:\Steam\steamapps\common\Cyberpunk 2077). 
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
-
-**HOW TO USE**
-
-**_Compiling Mod/Log Lists_**
-
-Step 1: Double click the application "Cyberpunk 2077 Mod List Tool.exe".
-
-Step 2: If you would like the list to not include log files deselect "Include Log Files Button" (Checked by Default).
-
-Step 3: Click 'Start'. The application should have generated a text file called "Cyberpunk 2077 Mod List.txt" located in your Cyberpunk 2077 directory.
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
-
-**_Core Mods Status_**
-
-Selecting Core Mods Status button will open a window with the status of the below core mods
-
-**ArchiveXL** - Will display currently installed version and if all required files pertaining to this dependency are installed.
-
-**Codeware** - Will display currently installed version and if all required files pertaining to this dependency are installed.
-
-**Cyber Engine Tweaks** - Will display the version if a Cyber Engine Tweaks log file is available and if it is installed. 
-
-**EquipmentEx** - Will display if all required files pertaining to this dependency are installed. No version is listed due to no version references in files. 
-
-**RED4ext** - Will display currently installed version and if all required files pertaining to this dependency are installed.
-
-**Redscript** - Will display if all required files pertaining to this dependency are installed. No version is listed due to no version references in files. 
-
-**TweakXL** - Will display currently installed version and if all required files pertaining to this dependency are installed.
-
-_It should be noted that these Core Mods are not included in the overall total calculation of installed mods and will remain untouched when temporarily disabling/enabling mods, and will not be viewable from the View Mod List Window._
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
-
-**_More Options Feature - Enable/Disable All Mods_**
-
-Selecting "Disable All Mods" creates a folder in your Cyberpunk 2077 Directory called "Temporarily Disabled Mods" and moves all installed mods to this folder. 
-
-Selecting "Enable All Mods" will restore all mods inside of the "Temporarily Disabled Mods" folder and delete this folder when there is no longer any mods inside. 
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
-
-
-**_More Options Feature - View Mod List_**
-
-Opens a window with a list of all Mods currently installed in your game.
-
-Allows manual selection of each individual file of any Mods installed in your game or currently disabled and in the "Temporarily Disabled Mods" folder. 
-
-For Example a mod titled MyMod.archive is already installed in archive/pc/mod it will show up in the Enabled Mods side on the left. Clicking it will highlight it blue and you can select Disable Selected and it will Disable the mod putting it inside the "Temporarily Disabled Mods" folder locatied in your Cyberpunk 2077 Directory. 
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
-
-**_More Options Feature - Export Mod Preset_**
-
-Clicking "Export Mod Preset" will open a window allowing selection of any of your games specific mod folders. 
-
-Once you check the boxes of the mod folders you would like Exported, click "Confirm".
-
-A Save Mod Preset As Window will appear and you can select the location you would like your Mod Preset/Backup saved to and click "Save". 
-
-A notification will appear once Export is complete!
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **UNINSTALL**
+Simply delete Cyberpunk 2077 Mod List Tool.exe from its location. If using a custom game directory, you may also clear the registry entry under HKEY_CURRENT_USER\Software\Cyberpunk2077ModListTool (optional).
 
-Delete "Cyberpunk 2077 Mod List Tool.exe" from your Cyberpunk 2077 game directory. 
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **PLEASE NOTE**
-
-Windows Defender and other Antivirus programs may falsely flag this as a potentially unwanted program or virus. It's 100% safe and most likely being flagged due to not being digitally signed by an actual publisher/developer. This application has already been submitted to be whitelisted from Microsoft so it should work itself out with time. 
-
-_______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
-
-﻿
+Antivirus Flags: Windows Defender or other antivirus software may flag this tool as a potentially unwanted program or virus due to its lack of a digital signature from a recognized publisher. The application is safe and has been submitted to Microsoft for whitelisting, which should resolve this over time.
+Requirements: The tool must have access to a valid Cyberpunk 2077 directory (set via Settings if not placed there) to function fully.
