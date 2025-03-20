@@ -8,6 +8,7 @@ This tool simplifies the process of documenting extensive mod collections, logs,
 ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
 **Key Features**
+
 Generates lists of mods from key directories:
 
 Cyber Engine Tweaks (CET) mods in Cyberpunk 2077\bin\x64\plugins\cyber_engine_tweaks\mods.
