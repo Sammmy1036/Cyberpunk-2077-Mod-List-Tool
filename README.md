@@ -89,9 +89,13 @@ Features a search bar and directory filter to refine the view.
 Example: Select MyMod.archive from the "Enabled Mods" list (left side), click Disable Selected, and it moves to Temporarily Disabled Mods. Disabled mods appear on the right side for re-enabling.
 
 **More Options - Export Mod Preset** 
+
 Click Export Mod Preset to open a folder selection window.
+
 Check the boxes for mod folders to export (e.g., archive/pc/mod, r6/scripts) and click Confirm.
+
 Choose a save location and filename in the "Save Mod Preset As" dialog, then click Save.
+
 A progress bar tracks the export, followed by a completion notification.
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
@@ -105,4 +109,7 @@ ________________________________________________________________________________
 **PLEASE NOTE**
 
 Antivirus Flags: Windows Defender or other antivirus software may flag this tool as a potentially unwanted program or virus due to its lack of a digital signature from a recognized publisher. The application is safe and has been submitted to Microsoft for whitelisting, which should resolve this over time.
-Requirements: The tool must have access to a valid Cyberpunk 2077 directory (set via Settings if not placed there) to function fully.
+
+**Requirements**
+
+The tool must have access to a valid Cyberpunk 2077 directory (set via Settings if not placed there) to function fully.
