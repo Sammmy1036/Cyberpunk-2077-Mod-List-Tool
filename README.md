@@ -8,15 +8,16 @@ Simplifies the process of documenting extensive mod collections, logs, and criti
 
 ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
-**Key Features**
+**KEY FEATURES**
 
 Generates lists of mods from key directories:
 
-Cyber Engine Tweaks (CET) mods in Cyberpunk 2077\bin\x64\plugins\cyber_engine_tweaks\mods.
+-Cyber Engine Tweaks (CET) mods in Cyberpunk 2077\bin\x64\plugins\cyber_engine_tweaks\mods.
 
-R6 scripts and tweaks in Cyberpunk 2077\r6.
+-R6 scripts and tweaks in Cyberpunk 2077\r6.
 
-Archive mods in Cyberpunk 2077\archive\pc\mod.
+-Archive mods in Cyberpunk 2077\archive\pc\mod.
+
 
 Optionally includes the most recent logs from ArchiveXL, Codeware, and TweakXL (via a checkbox, enabled by default).
 
