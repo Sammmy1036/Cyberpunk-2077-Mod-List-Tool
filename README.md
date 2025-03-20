@@ -108,7 +108,9 @@ ________________________________________________________________________________
 
 **UNINSTALL**
 
-Simply delete Cyberpunk 2077 Mod List Tool.exe from its location. If using a custom game directory, you may also clear the registry entry under HKEY_CURRENT_USER\Software\Cyberpunk2077ModListTool (optional).
+Simply delete Cyberpunk 2077 Mod List Tool.exe from its location. 
+
+If using a custom game directory, you may also clear the registry entry under HKEY_CURRENT_USER\Software\Cyberpunk2077ModListTool (optional).
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
 
