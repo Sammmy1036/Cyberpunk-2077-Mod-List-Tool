@@ -382,12 +382,16 @@ def disable_all_mods():
         messagebox.showwarning("No Game Directory", "Please set the Cyberpunk 2077 directory in Settings first!")
         return
 
-    if not messagebox.askyesno("Confirm Disable", "This will move all mods to the 'Temporarily Disabled Mods' folder located in your Cyberpunk 2077 directory. Proceed?"):
+    if not messagebox.askyesno("Confirm Disable", "This will move all non-core mods to the 'Temporarily Disabled Mods' folder located in your Cyberpunk 2077 directory. Proceed?"):
         return
     current_dir = game_dir
     temp_disabled_path = os.path.join(current_dir, TEMP_DISABLED_DIR)
     os.makedirs(temp_disabled_path, exist_ok=True)
     errors = []
+
+    # Get all EquipmentEx paths to exclude
+    equipment_ex_paths = CORE_DEPENDENCIES["EquipmentEx"]["path"]
+    print(f"EquipmentEx paths to exclude: {equipment_ex_paths}")  # Debug print
 
     for mod_dir in MOD_DIRECTORIES:
         full_dir = os.path.join(current_dir, mod_dir)
@@ -396,17 +400,32 @@ def disable_all_mods():
             os.makedirs(temp_mod_dir, exist_ok=True)
             for item in os.listdir(full_dir):
                 source = os.path.join(full_dir, item)
-                dest = os.path.join(temp_mod_dir, item)
-                try:
-                    shutil.move(source, dest)
-                except Exception as e:
-                    errors.append(f"Failed to disable {item} in {mod_dir}: {str(e)}")
+                rel_path = os.path.relpath(source, current_dir)
+                normalized_rel = rel_path.replace("\\", "/").lower()
+
+                # Improved check to skip ALL EquipmentEx files/folders
+                is_equipment_ex = (
+                    normalized_rel == "r6/scripts/equipmentex" or
+                    normalized_rel.startswith("r6/scripts/equipmentex/") or
+                    any(normalized_rel == equip_path.replace("\\", "/").lower()
+                        for equip_path in equipment_ex_paths)
+                )
+
+                if not is_equipment_ex:
+                    dest = os.path.join(temp_mod_dir, item)
+                    try: 
+                        shutil.move(source, dest)
+                        print(f"Moved: {source} to {dest}")
+                    except Exception as e:
+                        errors.append(f"Failed to disable {item} in {mod_dir}: {str(e)}")
+                else:
+                    print(f"Skipped EquipmentEx file: {normalized_rel}")
 
     if errors:
         messagebox.showerror("Errors Occurred", "\n".join(errors))
-        status_label.configure(text="Some mods could not be disabled. Check details.")
+        status_label.configure(text="Some non-core mods could not be disabled. Check details.")
     else:
-        status_label.configure(text="All mods have been disabled.")
+        status_label.configure(text="All non-core mods have been disabled.")
     update_mod_count_label()
     show_mods()
 
@@ -672,19 +691,40 @@ def show_mods():
     combobox.bind("<Button-1>", open_combobox_dropdown)
 
     mods = {}
+    equipment_ex_paths = CORE_DEPENDENCIES["EquipmentEx"]["path"]
     for mod_dir in MOD_DIRECTORIES:
         full_dir = os.path.join(current_dir, mod_dir)
         temp_mod_dir = os.path.join(temp_disabled_path, mod_dir)
         if os.path.exists(full_dir):
             for item in os.listdir(full_dir):
                 display_name = f"{item} ({mod_dir})"
-                mods[display_name] = (mod_dir, item, os.path.join(full_dir, item))
-                print(f"Added enabled mod: {display_name}")
+                full_item_path = os.path.join(full_dir, item)
+                rel_path = os.path.relpath(full_item_path, current_dir)
+                normalized_rel = rel_path.replace("\\", "/").lower()
+                # Exclude EquipmentEx files and folders
+                is_equipment_ex = (
+                    normalized_rel == "r6/scripts/equipmentex" or
+                    normalized_rel.startswith("r6/scripts/equipmentex/") or
+                    any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                )
+                if not is_equipment_ex:
+                    mods[display_name] = (mod_dir, item, os.path.join(full_dir, item))
+                    print(f"Added enabled mod: {display_name}")
         if os.path.exists(temp_mod_dir):
             for item in os.listdir(temp_mod_dir):
                 display_name = f"{item} ({mod_dir})"
-                mods[display_name] = (mod_dir, item, os.path.join(temp_mod_dir, item))
-                print(f"Added disabled mod: {display_name}")
+                full_item_path = os.path.join(temp_mod_dir, item)
+                rel_path = os.path.relpath(full_item_path, current_dir)
+                normalized_rel = rel_path.replace("\\", "/").lower()
+                # Exclude EquipmentEx files and folders
+                is_equipment_ex = (
+                    normalized_rel == "r6/scripts/equipmentex" or
+                    normalized_rel.startswith("r6/scripts/equipmentex/") or
+                    any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                )
+                if not is_equipment_ex:
+                    mods[display_name] = (mod_dir, item, os.path.join(temp_mod_dir, item))
+                    print(f"Added disabled mod: {display_name}")
 
     list_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
     list_frame.pack(pady=10, padx=10, fill="both", expand=True)
@@ -904,13 +944,26 @@ def update_mod_count_label():
         full_dir = os.path.join(current_dir, mod_dir)
         if os.path.exists(full_dir):
             for item in os.listdir(full_dir):
-                if mod_dir == os.path.normpath("bin/x64/plugins/cyber_engine_tweaks/mods"):
-                    if os.path.isdir(os.path.join(full_dir, item)):
+                full_item_path = os.path.join(full_dir, item)
+                rel_path = os.path.relpath(full_item_path, current_dir)
+                # Normalize paths for consistent comparison
+                normalized_rel = rel_path.replace("\\", "/").lower()
+                # Exclude all EquipmentEx paths and subdirectories
+                is_equipment_ex = (
+                    normalized_rel.startswith("r6/scripts/equipmentex/") or
+                    normalized_rel.startswith("archive/pc/mod/equipmentex/") or
+                    normalized_rel == "r6/scripts/equipmentex" or
+                    any(normalized_rel == equip_path.replace("\\", "/").lower()
+                        for equip_path in CORE_DEPENDENCIES["EquipmentEx"]["path"])
+                )
+                if not is_equipment_ex:
+                    if mod_dir == os.path.normpath("bin/x64/plugins/cyber_engine_tweaks/mods"):
+                        if os.path.isdir(full_item_path):
+                            mod_count += 1
+                            print(f"Counting directory mod: {item} in {mod_dir}")
+                    else:
                         mod_count += 1
-                        print(f"Counting directory mod: {item} in {mod_dir}")
-                else:
-                    mod_count += 1
-                    print(f"Counting file mod: {item} in {mod_dir}")
+                        print(f"Counting file mod: {item} in {mod_dir}")
     mod_count_label.configure(text=f"Total Mods: {mod_count}")
     print(f"Updated mod count: {mod_count}")
 
@@ -946,18 +999,25 @@ def check_log_errors(current_dir):
 
 def write_items_from_dir(file, directory, folder_name, temp_dir):
     if os.path.exists(directory):
-        file.write(f"\nMods located in {folder_name}:\n")
-        file.write("-" * 120 + "\n")
+        items = []
         if folder_name == "bin/x64/plugins/cyber_engine_tweaks/mods":
             for item in os.listdir(directory):
                 full_path = os.path.join(directory, item)
                 if os.path.isdir(full_path):
-                    file.write(f"{item}\n")
+                    items.append(item)
                     print(f"Wrote directory mod: {item} in {folder_name}")
         else:
-            for item in os.listdir(directory):
-                file.write(f"{item}\n")
+            items = os.listdir(directory)
+            for item in items:
                 print(f"Wrote file mod: {item} in {folder_name}")
+        if not items:
+            file.write(f"\nNo mods detected in \"{folder_name}\".\n")
+            file.write("-" * 120 + "\n")
+        else:
+            file.write(f"\nMods located in {folder_name}:\n")
+            file.write("-" * 120 + "\n")
+            for item in items:
+                file.write(f"{item}\n")
     else:
         file.write(f"\nError: The subfolder(s) {folder_name} were not found in the current location!\n")
 
@@ -1027,78 +1087,81 @@ def _export_with_progress(selected_folders):
         title="Save Mod Preset As"
     )
     if not save_path:
+        print("Save path not selected, aborting export.")
         return
 
     progress_window = ctk.CTkToplevel(app)
     progress_window.title("Exporting Mod Preset")
-    progress_window.geometry("300x100")
+    progress_window.geometry("400x150")  # Increased size from 300x100 to 400x150
     progress_window.resizable(False, False)
     progress_window.configure(fg_color=DARK_BG)
     progress_window.transient(app)
     progress_window.grab_set()
 
-    if os.path.exists(ICON_PATH):
-        try:
-            progress_window.iconbitmap(ICON_PATH)
-        except tk.TclError as e:
-            print(f"Warning: Failed to set icon for Progress window from '{ICON_PATH}': {e}. Using default icon.")
+    ctk.CTkLabel(progress_window, text="Exporting mod preset...", text_color=TEXT_COLOR, font=("Arial", 14)).pack(pady=20)  # Increased font size
+    progress_bar = ctk.CTkProgressBar(progress_window, width=350)  # Increased width
+    progress_bar.pack(pady=20)
+    status_label_progress = ctk.CTkLabel(progress_window, text="", text_color=TEXT_COLOR, font=("Arial", 12))  # Increased font size
+    status_label_progress.pack(pady=10)
 
-    screen_width = progress_window.winfo_screenwidth()
-    screen_height = progress_window.winfo_screenheight()
-    window_width = 300
-    window_height = 100
-    x = (screen_width - window_width) // 2
-    y = (screen_height - window_height) // 2
-    progress_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
-
-    ctk.CTkLabel(progress_window, text="Exporting mod preset...", text_color=TEXT_COLOR, font=("Arial", 10)).pack(pady=10)
-    progress_bar = ctk.CTkProgressBar(progress_window, width=250, mode="determinate")
-    progress_bar.pack(pady=10)
-    status_label_progress = ctk.CTkLabel(progress_window, text="", text_color=TEXT_COLOR, font=("Arial", 8))
-    status_label_progress.pack()
-
+    # Calculate total files recursively in each mod directory
     total_files = 0
     for mod_dir in selected_folders:
         full_dir = os.path.join(current_dir, mod_dir)
         if os.path.exists(full_dir):
             for root, _, files in os.walk(full_dir):
-                total_files += len(files)
+                total_files += len([f for f in files if os.path.isfile(os.path.join(root, f))])
+    print(f"Total files to process: {total_files}")
     if total_files == 0:
         messagebox.showinfo("No Mods", "No mods found to export in the selected folders.")
         progress_window.destroy()
         return
 
-    progress_bar.set(0)
-    progress_bar.configure(maximum=total_files)
+    progress_bar.set(0)  # Start at 0
     progress_window.update()
 
     errors = []
     files_processed = 0
-    with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for mod_dir in selected_folders:
-            full_dir = os.path.join(current_dir, mod_dir)
-            if os.path.exists(full_dir):
+    try:
+        with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for mod_dir in selected_folders:
+                full_dir = os.path.join(current_dir, mod_dir)
+                if not os.path.exists(full_dir):
+                    print(f"Directory not found: {full_dir}")
+                    continue
                 for root, _, files in os.walk(full_dir):
                     for file in files:
                         file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, current_dir)
-                        try:
-                            zipf.write(file_path, arcname)
-                            files_processed += 1
-                            progress_bar.set(files_processed / total_files)
-                            status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
-                            progress_window.update()
-                        except Exception as e:
-                            errors.append(f"Failed to add {file_path} to archive: {str(e)}")
-
-    progress_window.destroy()
+                        if os.path.isfile(file_path):  # Only process files
+                            arcname = os.path.relpath(file_path, current_dir)
+                            print(f"Attempting to add: {file_path} as {arcname}")
+                            try:
+                                zipf.write(file_path, arcname)
+                                files_processed += 1
+                                progress_bar.set(files_processed / total_files)  # Scale to 0-1
+                                status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
+                                progress_window.update()
+                                print(f"Successfully added: {file_path}")
+                            except Exception as e:
+                                errors.append(f"Failed to add {file_path} to archive: {str(e)}")
+                                print(f"Error adding {file_path}: {e}")
+                            if files_processed % 10 == 0:  # Update UI periodically
+                                progress_window.update()
+    except Exception as e:
+        errors.append(f"Failed to create zip file {save_path}: {str(e)}")
+        print(f"Zip creation failed: {e}")
+    finally:
+        progress_window.destroy()
 
     if errors:
-        messagebox.showerror("Export Errors", "\n".join(errors))
+        messagebox.showinfo("Export Errors", "\n".join(errors))
         status_label.configure(text="Mod preset export completed with errors. Check details.")
     else:
-        messagebox.showinfo("Export Successful", f"Mod preset exported to {save_path}")
-        status_label.configure(text="Mod preset exported successfully!")
+        if os.path.exists(save_path):
+            messagebox.showinfo("Export Successful", f"Mod preset exported to {save_path}")
+            status_label.configure(text="Mod preset exported successfully!")
+        else:
+            messagebox.showerror("Export Failed", "The export process completed but no file was created.")
     update_mod_count_label()
 
 def run_script():
@@ -1192,7 +1255,6 @@ def run_script():
             full_log_path = os.path.join(current_dir, log_path)
             file.write(f"\n{log_name} Log:\n")
             file.write("-" * 120 + "\n")
-            
             log_read_success = False
             if os.path.exists(full_log_path):
                 try:
@@ -1206,7 +1268,6 @@ def run_script():
                             file.write(f"The {log_name} log is empty.\n")
                 except (OSError, UnicodeDecodeError) as e:
                     file.write(f"Error reading {log_name}.log: {str(e)}\n")
-
             if not log_read_success and "log_pattern" in LOG_FILES[log_name]:
                 recent_log = get_most_recent_log(current_dir, LOG_FILES[log_name]["log_pattern"])
                 if recent_log:
@@ -1222,7 +1283,6 @@ def run_script():
                                 file.write(f"The recent {log_name} log ({os.path.basename(recent_log)}) is empty.\n")
                     except (OSError, UnicodeDecodeError) as e:
                         file.write(f"Error reading recent {log_name} log ({os.path.basename(recent_log)}): {str(e)}\n")
-                
             if not log_read_success:
                 file.write(f"The {log_name} log could not be found or read! Log not provided!\n")
 
@@ -1261,6 +1321,19 @@ def show_home():
     start_button.pack(pady=10)
 
     ctk.CTkLabel(main, text="Select Logs to Include:", text_color=TEXT_COLOR).pack(pady=(20, 5))
+    
+    # Add Select All Logs checkbox
+    select_all_var = tk.BooleanVar(value=True)
+    def toggle_all_logs():
+        state = select_all_var.get()
+        for var in log_vars.values():
+            var.set(state)
+        print(f"Select All Logs toggled: {state}")
+    
+    ctk.CTkCheckBox(main, text="Select All Logs", variable=select_all_var, command=toggle_all_logs,
+                    font=("Arial", 10), text_color=TEXT_COLOR, fg_color=NEON_YELLOW,
+                    checkbox_height=18, checkbox_width=18, border_color=NEON_YELLOW).pack(pady=5)
+    
     log_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
     log_frame.pack(anchor="center", pady=5)
     log_vars = {log_name: tk.BooleanVar(value=True) for log_name in LOG_FILES}
