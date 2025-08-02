@@ -14,8 +14,7 @@ Cyberpunk 2077\r6\scripts and Cyberpunk 2077\r6\tweaks (R6 scripts and tweaks).
 Cyberpunk 2077\archive\pc\mod (Archive mods).
 Cyberpunk 2077\red4ext\plugins (Additional mod detection for RED4ext plugins, excluding core mods like ArchiveXL, Codeware, TweakXL).
 
-_Optionally includes logs from ArchiveXL, Codeware, TweakXL, Cyber Engine Tweaks, RED4ext, Redscript, Input Loader, and Mod Settings (via dynamic checkbox selection, enabled by default).
-_
+Optionally includes logs from ArchiveXL, Codeware, TweakXL, Cyber Engine Tweaks, RED4ext, Redscript, Input Loader, and Mod Settings (via dynamic checkbox selection, enabled by default).
 
 **Mod Management**
 Temporarily enable or disable all non-core mods or individual mods via a dual-listbox interface (Enabled/Disabled Mods) with search and directory filtering.
