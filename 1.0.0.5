@@ -1,6 +1,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox, filedialog
+import base64
 import os
 import msvcrt
 import sys
@@ -13,12 +14,11 @@ import shutil
 import psutil
 import zipfile
 import winreg
+import platform
+from io import BytesIO
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from PIL import Image
-import win32gui
-import win32con
-import ctypes
 
 try:
     import win32api
@@ -26,22 +26,83 @@ try:
 except ImportError:
     WIN32_AVAILABLE = False
 
+# Get the base directory for the application
+if getattr(sys, 'frozen', False):
+    SCRIPT_DIR = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+else:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 current_page = "home"
 
-# === Global Settings ===
+image_files = [
+    "mod_list_tool.png",
+    "home_icon.png",
+    "mods_icon.png",
+    "settings_icon.png",
+    "core_icon.png",
+    "log_icon.png",
+    "game_icon.png"
+]
+
+image_dir = os.path.join(SCRIPT_DIR, "icons")
+
+def get_game_version(file_path):
+    if platform.system() != "Windows" or not WIN32_AVAILABLE:
+        return DEFAULT_GAME_VERSION
+    try:
+        if not os.path.exists(file_path):
+            return DEFAULT_GAME_VERSION
+        info = win32api.GetFileVersionInfo(file_path, "\\")
+        ms = info.get("ProductVersionMS", 0)
+        ls = info.get("ProductVersionLS", 0)
+        major = (ms >> 16) & 0xffff
+        minor = ms & 0xffff
+        build = (ls >> 16) & 0xffff
+        revision = ls & 0xffff
+        return f"{major}.{minor}.{build}.{revision}"
+    except (win32api.error, FileNotFoundError):
+        return DEFAULT_GAME_VERSION
+
+def convert_image_to_base64(image_path):
+    try:
+        with open(image_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+        return encoded_string
+    except (FileNotFoundError, IOError) as e:
+        print(f"Error converting {image_path} to base64: {e}")
+        return None
+
+# Generate base64 strings in memory
+base64_strings = {}
+for image_file in image_files:
+    full_path = os.path.join(image_dir, image_file)
+    if os.path.exists(full_path):
+        base64_string = convert_image_to_base64(full_path)
+        if base64_string:
+            base64_strings[image_file] = base64_string
+            print(f"Converted {image_file} to base64 (in memory)")
+
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("green")
 
-# Cyberpunk Colors
 NEON_YELLOW = "#fcee09"
 DARK_BG = "#111111"
 NEON_GREEN = "#5BDE7B"
 TEXT_COLOR = "#fcee09"
 ACCENT_RED = "#DB002F"
-
-# Cyberpunk 2077 Mod List Tool Version
-tool_Version = "1.0.0.5"
-
+tool_Version = "2.0.0.0"
+DEFAULT_GAME_VERSION = "Unknown"
+REGISTRY_KEY = r"Software\Cyberpunk2077ModListTool"
+REGISTRY_VALUE = "GameDir"
+LOCK_FILE = os.path.join(tempfile.gettempdir(), "Cyberpunk2077ModListTool.lock")
+TEMP_DISABLED_DIR = "Temporarily Disabled Mods"
+CACHE_TIMEOUT = 5
+MOD_DIRECTORIES = [
+    os.path.join("archive", "pc", "mod"),
+    os.path.join("bin", "x64", "plugins", "cyber_engine_tweaks", "mods"),
+    os.path.join("r6", "scripts"),
+    os.path.join("r6", "tweaks")
+]
 # Core dependencies and their Nexus Mod IDs with expected paths
 CORE_DEPENDENCIES = {
     "ArchiveXL": {
@@ -201,21 +262,33 @@ else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Define paths for the icon
+if getattr(sys, 'frozen', False):
+    SCRIPT_DIR = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+else:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 ICON_PATH = os.path.join(SCRIPT_DIR, "Cyberpunk 2077 Mod List Tool.ico")
 
-# Lock file for single instance checking
-LOCK_FILE = os.path.join(tempfile.gettempdir(), "Cyberpunk2077ModListTool.lock")
-
-# Define mod directories
-MOD_DIRECTORIES = [
-    "archive/pc/mod",
-    "bin/x64/plugins/cyber_engine_tweaks/mods",
-    "r6/scripts",
-    "r6/tweaks"
-]
-
-# Temporary disabled mods folder
-TEMP_DISABLED_DIR = "Temporarily Disabled Mods"
+def set_window_icon(window):
+    if not os.path.exists(ICON_PATH):
+        print(f"Icon file not found at: {ICON_PATH}")
+        return
+    try:
+        # Ensure window is fully initialized
+        window.update_idletasks()
+        # Set icon using iconbitmap for Windows
+        if platform.system() == "Windows":
+            window.after(200, lambda: window.iconbitmap(ICON_PATH))
+        # Fallback to iconphoto for cross-platform compatibility
+        try:
+            img = tk.PhotoImage(file=os.path.join(SCRIPT_DIR, "icons", "mod_list_tool.png"))
+            window.iconphoto(True, img)
+            print(f"Set iconphoto for window: {window.title()}")
+        except tk.TclError as e:
+            print(f"Failed to set iconphoto for window {window.title()}: {e}")
+        print(f"Successfully set icon for window: {window.title()}")
+    except tk.TclError as e:
+        print(f"Failed to set icon for window {window.title()}: {e}")
 
 # Global variables
 game_dir = None
@@ -223,14 +296,7 @@ mod_observer = None
 last_core_mods_status = None
 _game_running_cache = None
 _cache_timestamp = 0
-CACHE_TIMEOUT = 2
-
-# Registry key for storing game_dir
-REGISTRY_KEY = r"Software\Cyberpunk2077ModListTool"
-REGISTRY_VALUE = "GameDir"
-
-# Default game version
-DEFAULT_GAME_VERSION = "Unknown"
+log_vars = {} 
 
 def save_game_dir_to_registry():
     global game_dir
@@ -262,7 +328,7 @@ def load_game_dir_from_registry():
 
 def change_game_directory():
     global game_dir
-    new_dir = filedialog.askdirectory(title="Select Cyberpunk 2077 Game Directory", initialdir=game_dir or "C:\\Program Files")
+    new_dir = filedialog.askdirectory(title="Select Cyberpunk 2077 Game Directory", initialdir=game_dir or "C:\Program Files (x86)\Steam\steamapps\common\Cyberpunk 2077")
     if new_dir:
         game_exe = os.path.join(new_dir, "bin", "x64", "Cyberpunk2077.exe")
         if os.path.exists(game_exe):
@@ -285,12 +351,17 @@ def on_closing():
         try:
             msvcrt.locking(sys.lock_file_handle.fileno(), msvcrt.LK_UNLCK, 1)
             sys.lock_file_handle.close()
-            os.remove(LOCK_FILE)
+            if os.path.exists(LOCK_FILE):
+                os.remove(LOCK_FILE)
+                print(f"Lock file {LOCK_FILE} removed")
         except (OSError, IOError) as e:
             print(f"Error releasing lock or removing lock file: {e}")
     if mod_observer:
-        mod_observer.stop()
-        mod_observer.join()
+        try:
+            mod_observer.stop()
+            mod_observer.join()
+        except Exception as e:
+            print(f"Error stopping mod observer: {e}")
     app.destroy()
 
 def check_single_instance():
@@ -399,13 +470,17 @@ def is_game_running():
     return _game_running_cache
 
 def create_progress_window(title, total_items):
+    # Check if a progress window is already open
+    for child in app.winfo_children():
+        if isinstance(child, ctk.CTkToplevel) and child.title().startswith(title):
+            print(f"Progress window '{title}' already open, skipping creation")
+            return None, None, None
+
     progress_window = ctk.CTkToplevel(app)
     progress_window.title(title)
     progress_window.geometry("400x150")
     progress_window.resizable(False, False)
     progress_window.configure(fg_color=DARK_BG)
-    progress_window.transient(app)
-    progress_window.grab_set()
 
     # Center the window relative to the main app window
     app_x = app.winfo_x()
@@ -418,12 +493,20 @@ def create_progress_window(title, total_items):
     y = app_y + (app_height - window_height) // 2
     progress_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
+    # Add widgets after geometry
     ctk.CTkLabel(progress_window, text=f"{title}...", text_color=TEXT_COLOR, font=("Arial", 14)).pack(pady=20)
     progress_bar = ctk.CTkProgressBar(progress_window, width=350)
     progress_bar.pack(pady=20)
     progress_bar.set(0)
     status_label_progress = ctk.CTkLabel(progress_window, text=f"Processing: 0/{total_items}", text_color=TEXT_COLOR, font=("Arial", 12))
     status_label_progress.pack(pady=10)
+
+    # Set modal properties after widgets
+    progress_window.transient(app)
+    progress_window.grab_set()
+
+    # Set icon after all properties and widgets
+    set_window_icon(progress_window)
 
     return progress_window, progress_bar, status_label_progress
 
@@ -432,38 +515,41 @@ def rebuild_mods_dictionary(current_dir, temp_disabled_path):
     core_mods = ["archivexl", "codeware", "tweakxl"]
     equipment_ex_paths = CORE_DEPENDENCIES["EquipmentEx"]["path"]
     for mod_dir in MOD_DIRECTORIES + ["red4ext/plugins"]:
-        full_dir = os.path.join(current_dir, mod_dir)
-        temp_mod_dir = os.path.join(temp_disabled_path, mod_dir)
-        if os.path.exists(full_dir):
-            for item in os.listdir(full_dir):
-                display_name = f"{item} ({mod_dir})"
-                full_item_path = os.path.join(full_dir, item)
-                rel_path = os.path.relpath(full_item_path, current_dir)
-                normalized_rel = rel_path.replace("\\", "/").lower()
-                is_equipment_ex = (
-                    normalized_rel == "r6/scripts/equipmentex" or
-                    normalized_rel.startswith("r6/scripts/equipmentex/") or
-                    any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
-                )
-                is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
-                if not is_equipment_ex and not is_core_red4ext:
-                    mods[display_name] = (mod_dir, item, full_item_path)
-                    print(f"Added enabled mod: {display_name}")
-        if os.path.exists(temp_mod_dir):
-            for item in os.listdir(temp_mod_dir):
-                display_name = f"{item} ({mod_dir})"
-                full_item_path = os.path.join(temp_mod_dir, item)
-                rel_path = os.path.relpath(full_item_path, current_dir)
-                normalized_rel = rel_path.replace("\\", "/").lower()
-                is_equipment_ex = (
-                    normalized_rel == "r6/scripts/equipmentex" or
-                    normalized_rel.startswith("r6/scripts/equipmentex/") or
-                    any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
-                )
-                is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
-                if not is_equipment_ex and not is_core_red4ext:
-                    mods[display_name] = (mod_dir, item, full_item_path)
-                    print(f"Added disabled mod: {display_name}")
+        try:
+            full_dir = os.path.join(current_dir, mod_dir)
+            temp_mod_dir = os.path.join(temp_disabled_path, mod_dir)
+            if os.path.exists(full_dir):
+                for item in os.listdir(full_dir):
+                    display_name = f"{item} ({mod_dir})"
+                    full_item_path = os.path.join(full_dir, item)
+                    rel_path = os.path.relpath(full_item_path, current_dir)
+                    normalized_rel = rel_path.replace("\\", "/").lower()
+                    is_equipment_ex = (
+                        normalized_rel == "r6/scripts/equipmentex" or
+                        normalized_rel.startswith("r6/scripts/equipmentex/") or
+                        any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                    )
+                    is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
+                    if not is_equipment_ex and not is_core_red4ext:
+                        mods[display_name] = (mod_dir, item, full_item_path)
+                        print(f"Added enabled mod: {display_name}")
+            if os.path.exists(temp_mod_dir):
+                for item in os.listdir(temp_mod_dir):
+                    display_name = f"{item} ({mod_dir})"
+                    full_item_path = os.path.join(temp_mod_dir, item)
+                    rel_path = os.path.relpath(full_item_path, current_dir)
+                    normalized_rel = rel_path.replace("\\", "/").lower()
+                    is_equipment_ex = (
+                        normalized_rel == "r6/scripts/equipmentex" or
+                        normalized_rel.startswith("r6/scripts/equipmentex/") or
+                        any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                    )
+                    is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
+                    if not is_equipment_ex and not is_core_red4ext:
+                        mods[display_name] = (mod_dir, item, full_item_path)
+                        print(f"Added disabled mod: {display_name}")
+        except OSError as e:
+            print(f"Error accessing directory {mod_dir}: {e}")
     return mods
 
 def disable_all_mods(enabled_listbox, disabled_listbox, selected_dir_var, search_var, mods):
@@ -474,46 +560,21 @@ def disable_all_mods(enabled_listbox, disabled_listbox, selected_dir_var, search
         if not game_dir:
             messagebox.showwarning("No Game Directory", "Please set the Cyberpunk 2077 directory in Settings first!")
             return
-
-        if not messagebox.askyesno("Confirm Disable", "This will move all non-core mods to the 'Temporarily Disabled Mods' folder located in your Cyberpunk 2077 directory. Proceed?"):
+        if not messagebox.askyesno("Confirm Disable", "This will move all non-core mods to the 'Temporarily Disabled Mods' folder. Proceed?"):
             return
         current_dir = game_dir
         temp_disabled_path = os.path.join(current_dir, TEMP_DISABLED_DIR)
         os.makedirs(temp_disabled_path, exist_ok=True)
         errors = []
-
-        # Count total mods to move
-        total_mods = 0
-        core_mods = ["archivexl", "codeware", "tweakxl"]
-        equipment_ex_paths = CORE_DEPENDENCIES["EquipmentEx"]["path"]
-        for mod_dir in MOD_DIRECTORIES + ["red4ext/plugins"]:
-            full_dir = os.path.join(current_dir, mod_dir)
-            if os.path.exists(full_dir):
-                for item in os.listdir(full_dir):
-                    source = os.path.join(full_dir, item)
-                    rel_path = os.path.relpath(source, current_dir)
-                    normalized_rel = rel_path.replace("\\", "/").lower()
-                    is_equipment_ex = (
-                        normalized_rel == "r6/scripts/equipmentex" or
-                        normalized_rel.startswith("r6/scripts/equipmentex/") or
-                        any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
-                    )
-                    is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
-                    display_name = f"{item} ({mod_dir})"
-                    if not is_equipment_ex and not is_core_red4ext and display_name in mods:
-                        total_mods += 1
-
+        total_mods = sum(1 for display_name, (mod_dir, _, _) in mods.items()
+                         if mod_dir in MOD_DIRECTORIES + ["red4ext/plugins"] and
+                         not any(excluded in display_name.lower() for excluded in ["archivexl", "codeware", "tweakxl", "equipmentex"]))
         if total_mods == 0:
             messagebox.showinfo("No Mods", "No non-core mods found to disable.")
             return
-
-        # Create progress window
         progress_window, progress_bar, status_label_progress = create_progress_window("Disabling All Mods", total_mods)
         mods_moved = 0
         moved_items = []
-
-        # Move non-core mods
-        print("Starting file moves...")
         for mod_dir in MOD_DIRECTORIES + ["red4ext/plugins"]:
             full_dir = os.path.join(current_dir, mod_dir)
             temp_mod_dir = os.path.join(temp_disabled_path, mod_dir)
@@ -526,56 +587,37 @@ def disable_all_mods(enabled_listbox, disabled_listbox, selected_dir_var, search
                     is_equipment_ex = (
                         normalized_rel == "r6/scripts/equipmentex" or
                         normalized_rel.startswith("r6/scripts/equipmentex/") or
-                        any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                        any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in CORE_DEPENDENCIES["EquipmentEx"]["path"])
                     )
-                    is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
+                    is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in ["archivexl", "codeware", "tweakxl"])
                     display_name = f"{item} ({mod_dir})"
                     if not is_equipment_ex and not is_core_red4ext and display_name in mods:
                         dest = os.path.join(temp_mod_dir, item)
                         try:
                             shutil.move(source, dest)
-                            print(f"Moved: {source} to {dest}")
                             moved_items.append((display_name, mod_dir, item, dest))
                             mods_moved += 1
                             progress_bar.set(mods_moved / total_mods)
                             status_label_progress.configure(text=f"Processing: {mods_moved}/{total_mods}")
                             progress_window.update()
-                        except Exception as e:
-                            errors.append(f"Failed to disable {item} in {mod_dir}: {str(e)}")
-
-        # Update mods dictionary with moved items
+                        except (shutil.Error, OSError) as e:
+                            errors.append(f"Failed to disable {display_name}: {str(e)}")
         for display_name, mod_dir, item, dest in moved_items:
             mods[display_name] = (mod_dir, item, dest)
-        print(f"Mods dictionary after moves: {mods}")
-
-        # Rebuild mods dictionary
-        mods.clear()
         mods.update(rebuild_mods_dictionary(current_dir, temp_disabled_path))
-        print(f"Rebuilt mods dictionary: {mods}")
-
-        # Close progress window
         progress_window.destroy()
-
-        # Force UI update
-        main.update()
-        main.update_idletasks()
-
         if errors:
             messagebox.showerror("Errors Occurred", "\n".join(errors))
             status_label.configure(text="Some non-core mods could not be disabled. Check details.")
         else:
             status_label.configure(text="All non-core mods have been disabled.")
         update_mod_count_label()
-
-        # Force page reload and update mod list
         show_mods()
         update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods, search_var.get())
-
     except Exception as e:
-        print(f"Error in disable_all_mods: {e}")
         if 'progress_window' in locals():
             progress_window.destroy()
-        messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+        messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
 
 def enable_all_mods(enabled_listbox, disabled_listbox, selected_dir_var, search_var, mods):
     try:
@@ -871,28 +913,27 @@ def update_core_mods_label():
         app.after(5000, update_core_mods_label)
 
 def update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods, search_term=""):
+    if not (enabled_listbox.winfo_exists() and disabled_listbox.winfo_exists()):
+        print("Error: One or both listboxes do not exist. Skipping update.")
+        return
     selected_dir = selected_dir_var.get()
     print(f"Updating mod list for directory: {selected_dir}, search term: {search_term}")
-    if enabled_listbox.winfo_exists() and disabled_listbox.winfo_exists():
-        enabled_listbox.delete(0, tk.END)
-        disabled_listbox.delete(0, tk.END)
-
-        search_term = search_term.lower()
-        for display_name, (mod_dir, mod_name, current_path) in sorted(mods.items()):
-            if selected_dir == "All" or mod_dir == selected_dir:
-                if search_term and search_term not in display_name.lower():
-                    continue
-                if TEMP_DISABLED_DIR in os.path.normpath(current_path):
-                    disabled_listbox.insert(tk.END, display_name)
-                    print(f"Inserted disabled mod: {display_name}")
-                else:
-                    enabled_listbox.insert(tk.END, display_name)
-                    print(f"Inserted enabled mod: {display_name}")
-        print(f"Mod list updated: {enabled_listbox.size()} enabled, {disabled_listbox.size()} disabled")
-        main.update()
-        main.update_idletasks()
-    else:
-        print("Error: One or both listboxes do not exist. Skipping update.")
+    enabled_listbox.delete(0, tk.END)
+    disabled_listbox.delete(0, tk.END)
+    search_term = search_term.lower()
+    filtered_mods = [
+        (display_name, data) for display_name, data in sorted(mods.items())
+        if (selected_dir == "All" or data[0] == selected_dir) and
+           (not search_term or search_term in display_name.lower())
+    ]
+    for display_name, (mod_dir, mod_name, current_path) in filtered_mods:
+        if TEMP_DISABLED_DIR in os.path.normpath(current_path):
+            disabled_listbox.insert(tk.END, display_name)
+            print(f"Inserted disabled mod: {display_name}")
+        else:
+            enabled_listbox.insert(tk.END, display_name)
+            print(f"Inserted enabled mod: {display_name}")
+    print(f"Mod list updated: {enabled_listbox.size()} enabled, {disabled_listbox.size()} disabled")
 
 def show_mods():
     global status_label, enabled_listbox, disabled_listbox, selected_dir_var, search_var, mods, current_page
@@ -906,7 +947,8 @@ def show_mods():
     temp_disabled_path = os.path.join(current_dir, TEMP_DISABLED_DIR)
 
     # Place the image at the very top, centered with y=-70
-    img_path = r"C:\Users\Sammy\Desktop\icons\mod_list_tool.png"
+    img_path = os.path.join(SCRIPT_DIR, "icons", "mod_list_tool.png")
+
     if os.path.exists(img_path):
         img = ctk.CTkImage(Image.open(img_path), size=(250, 250))
         image_label = ctk.CTkLabel(main, image=img, text="")
@@ -921,9 +963,10 @@ def show_mods():
     button_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
     button_frame.grid(row=0, column=0, pady=(120, 10), sticky="n")
 
-    ctk.CTkButton(button_frame, text="Disable Core Mods", command=disable_core_mods, fg_color=ACCENT_RED, text_color="white", hover_color="#94160C").pack(side="left", padx=5)  # Orange-red hover
-    ctk.CTkButton(button_frame, text="Enable Core Mods", command=enable_core_mods, fg_color=NEON_GREEN, text_color="black", hover_color="#1ADB00").pack(side="left", padx=5)  # Soft green hover
+    ctk.CTkButton(button_frame, text="Disable All Mods", command=lambda: disable_all_mods(enabled_listbox, disabled_listbox, selected_dir_var, search_var, mods), fg_color=ACCENT_RED, text_color="white", hover_color="#94160C").pack(side="left", padx=5)
+    ctk.CTkButton(button_frame, text="Enable All Mods", command=lambda: enable_all_mods(enabled_listbox, disabled_listbox, selected_dir_var, search_var, mods), fg_color=NEON_GREEN, text_color="black", hover_color="#1ADB00").pack(side="left", padx=5)
     ctk.CTkButton(button_frame, text="Export / Backup Mod Preset", command=export_mods, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00").pack(side="left", padx=5)
+    ctk.CTkButton(button_frame, text="Import Mod Preset", command=import_mods, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00").pack(side="left", padx=5)
 
     search_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
     search_frame.grid(row=1, column=0, pady=5, sticky="ew", padx=10)
@@ -949,12 +992,8 @@ def show_mods():
         state="readonly"
     )
     combobox.grid(row=2, column=0, pady=5, padx=10, sticky="ew")
-
-    def open_combobox_dropdown(event):
-        combobox._open_dropdown_menu()
-        print("Combobox clicked, dropdown opened.")
-
-    combobox.bind("<Button-1>", open_combobox_dropdown)
+    # Add binding to open dropdown on click anywhere on the combobox
+    combobox.bind("<Button-1>", lambda event: combobox._open_dropdown_menu())
 
     # Build mods dictionary
     mods = rebuild_mods_dictionary(current_dir, temp_disabled_path)
@@ -974,7 +1013,7 @@ def show_mods():
     enabled_list_frame.pack(pady=5, fill="both", expand=True)
     enabled_scrollbar = ctk.CTkScrollbar(enabled_list_frame, orientation="vertical")
     enabled_scrollbar.pack(side="right", fill="y")
-    enabled_listbox = tk.Listbox(enabled_list_frame, font=("Arial", 10), width=40, height=15, bg="#333333", fg="white", selectmode=tk.EXTENDED)  # Increased height to 20
+    enabled_listbox = tk.Listbox(enabled_list_frame, font=("Arial", 10), width=40, height=15, bg="#333333", fg="white", selectmode=tk.EXTENDED)
     enabled_listbox.pack(side="left", fill="both", expand=True)
     enabled_listbox.configure(yscrollcommand=enabled_scrollbar.set)
     enabled_scrollbar.configure(command=enabled_listbox.yview)
@@ -984,7 +1023,7 @@ def show_mods():
     disabled_list_frame.pack(pady=5, fill="both", expand=True)
     disabled_scrollbar = ctk.CTkScrollbar(disabled_list_frame, orientation="vertical")
     disabled_scrollbar.pack(side="right", fill="y")
-    disabled_listbox = tk.Listbox(disabled_list_frame, font=("Arial", 10), width=40, height=15, bg="#333333", fg="white", selectmode=tk.EXTENDED)  # Increased height to 20
+    disabled_listbox = tk.Listbox(disabled_list_frame, font=("Arial", 10), width=40, height=15, bg="#333333", fg="white", selectmode=tk.EXTENDED)
     disabled_listbox.pack(side="left", fill="both", expand=True)
     disabled_listbox.configure(yscrollcommand=disabled_scrollbar.set)
     disabled_scrollbar.configure(command=disabled_listbox.yview)
@@ -997,12 +1036,17 @@ def show_mods():
     def on_clear():
         search_var.set("")
         print("Clear button clicked, resetting search term.")
-        update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods)
+        update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods, "")
 
-    def on_combobox_select(event):
+    def on_combobox_select(event=None):
         selected_dir = selected_dir_var.get()
-        print(f"Combobox selected: {selected_dir}, triggering search")
-        on_search()
+        print(f"Combobox selected: {selected_dir}, updating mod list")
+        try:
+            update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods, search_var.get())
+            print(f"Successfully updated mod list for directory: {selected_dir}")
+        except Exception as e:
+            print(f"Error updating mod list: {e}")
+            status_label.configure(text=f"Error updating mod list: {str(e)}")
 
     def disable_selected():
         if is_game_running():
@@ -1062,10 +1106,15 @@ def show_mods():
         update_mod_count_label()
         update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods, search_var.get())
 
+    # Bind commands
     search_button.configure(command=on_search)
     clear_button.configure(command=on_clear)
     search_entry.bind("<Return>", lambda event: on_search())
+
+    # Bind ComboboxSelected event and add trace for debugging
     combobox.bind("<<ComboboxSelected>>", on_combobox_select)
+    selected_dir_var.trace_add("write", lambda *args: on_combobox_select())
+    print(f"Initial directory selection: {selected_dir_var.get()}")
 
     ctk.CTkButton(enabled_frame, text="Disable Selected", command=disable_selected, font=("Arial", 12), fg_color=ACCENT_RED, text_color="white", hover_color="#94160C").pack(pady=5)
     ctk.CTkButton(disabled_frame, text="Enable Selected", command=enable_selected, font=("Arial", 12), fg_color=NEON_GREEN, text_color="black", hover_color="#1ADB00").pack(pady=5)
@@ -1074,7 +1123,13 @@ def show_mods():
     status_label = ctk.CTkLabel(main, text="Click 'Enable/Disable All Mods' to manage mods!", font=("Arial", 12, "bold"), text_color=TEXT_COLOR)
     status_label.grid(row=4, column=0, pady=10, sticky="n")
 
-    update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods)
+    # Initial population of mod list
+    try:
+        update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods, search_var.get())
+        print("Initial mod list population completed")
+    except Exception as e:
+        print(f"Error during initial mod list population: {e}")
+        status_label.configure(text=f"Error loading mod list: {str(e)}")
 
 def disable_all_mods(enabled_listbox, disabled_listbox, selected_dir_var, search_var, mods):
     try:
@@ -1460,7 +1515,6 @@ def write_items_from_dir(file, directory, folder_name, temp_dir):
         file.write(f"\nError: The subfolder(s) {folder_name} were not found in the current location!\n")
 
 def export_mods():
-    global status_label
     if is_game_running():
         messagebox.showwarning("Game Running", "Cannot export mods while Cyberpunk 2077 is running!")
         return
@@ -1468,115 +1522,101 @@ def export_mods():
         messagebox.showwarning("No Game Directory", "Please set the Cyberpunk 2077 directory in Settings first!")
         return
 
-    current_dir = game_dir
-    selection_window = ctk.CTkToplevel(app)
-    selection_window.title("Select Mod Folders to Export")
-    selection_window.geometry("400x300")
-    selection_window.resizable(False, False)
-    selection_window.configure(fg_color=DARK_BG)
-    selection_window.transient(app)
-    selection_window.grab_set()
+    # Folder selection dialog
+    class FolderSelectionWindow(ctk.CTkToplevel):
+        def __init__(self, parent):
+            super().__init__(parent)
+            self.title("Select Folders to Export")
+            self.geometry("400x300")
+            self.resizable(False, False)
+            self.configure(fg_color=DARK_BG)
+            self.selected_folders = []
+            self.transient(parent)
+            self.grab_set()
 
-    if os.path.exists(ICON_PATH):
-        try:
-            selection_window.iconbitmap(ICON_PATH)
-        except tk.TclError as e:
-            print(f"Warning: Failed to set icon for Selection window from '{ICON_PATH}': {e}. Using default icon.")
+            # Center the window
+            parent_x = parent.winfo_x()
+            parent_y = parent.winfo_y()
+            parent_width = parent.winfo_width()
+            parent_height = parent.winfo_height()
+            window_width = 400
+            window_height = 300
+            x = parent_x + (parent_width - window_width) // 2
+            y = parent_y + (parent_height - window_height) // 2
+            self.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
-    app_x = app.winfo_x()
-    app_y = app.winfo_y()
-    app_width = app.winfo_width()
-    app_height = app.winfo_height()
-    window_width = 400
-    window_height = 300
-    x = app_x + (app_width - window_width) // 2
-    y = app_y + (app_height - window_height) // 2
-    selection_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+            ctk.CTkLabel(self, text="Select mod folders to export:", font=("Arial", 14), text_color=TEXT_COLOR).pack(pady=10)
+            self.folder_vars = {}
+            for folder in MOD_DIRECTORIES + ["red4ext/plugins"]:
+                var = tk.BooleanVar(value=True)
+                self.folder_vars[folder] = var
+                ctk.CTkCheckBox(self, text=folder, variable=var, font=("Arial", 12), text_color=TEXT_COLOR,
+                                checkbox_height=18, checkbox_width=18, border_color=NEON_GREEN,
+                                fg_color=NEON_GREEN, hover_color=NEON_GREEN).pack(pady=5)
+            button_frame = ctk.CTkFrame(self, fg_color=DARK_BG)
+            button_frame.pack(pady=20)
+            ctk.CTkButton(button_frame, text="Confirm", command=self.confirm, fg_color=NEON_GREEN, text_color="black").pack(side="left", padx=10)
+            ctk.CTkButton(button_frame, text="Cancel", command=self.cancel, fg_color=ACCENT_RED, text_color="white").pack(side="left", padx=10)
 
-    folder_vars = {mod_dir: tk.BooleanVar(value=True) for mod_dir in MOD_DIRECTORIES + ["red4ext/plugins"]}
-    for i, mod_dir in enumerate(MOD_DIRECTORIES + ["red4ext/plugins"]):
-        full_dir = os.path.join(current_dir, mod_dir)
-        enabled = os.path.exists(full_dir)
-        cb = ctk.CTkCheckBox(selection_window, text=mod_dir, variable=folder_vars[mod_dir],
-                             font=("Arial", 10), fg_color=NEON_YELLOW, text_color=TEXT_COLOR,
-                             checkbox_height=18, checkbox_width=18)
-        cb.pack(pady=5, anchor="w", padx=10)
-        if not enabled:
-            cb.configure(state="disabled")
+            set_window_icon(self)  # Set icon for folder selection window
 
-    def on_confirm():
-        selected_folders = [mod_dir for mod_dir, var in folder_vars.items() if var.get() and os.path.exists(os.path.join(current_dir, mod_dir))]
-        if not selected_folders:
-            messagebox.showwarning("No Selection", "Please select at least one mod folder to export.")
-        else:
-            selection_window.destroy()
-            _export_with_progress(selected_folders)
+        def confirm(self):
+            self.selected_folders = [folder for folder, var in self.folder_vars.items() if var.get()]
+            self.destroy()
 
-    confirm_button = ctk.CTkButton(selection_window, text="Confirm", command=on_confirm, font=("Arial", 12),
-                                   fg_color=NEON_GREEN, text_color="black")
-    confirm_button.pack(pady=20)
-    selection_window.wait_window()
+        def cancel(self):
+            self.selected_folders = []
+            self.destroy()
 
-def _export_with_progress(selected_folders):
-    global status_label
-    current_dir = game_dir
-    default_filename = f"Mod_Preset_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    folder_window = FolderSelectionWindow(app)
+    app.wait_window(folder_window)
+    selected_folders = folder_window.selected_folders
+    if not selected_folders:
+        print("No folders selected, aborting export.")
+        return
+
     save_path = filedialog.asksaveasfilename(
         defaultextension=".zip",
         filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
-        initialfile=default_filename,
-        title="Save Mod Preset As"
+        title="Save Mod Preset As",
+        initialfile=f"Cyberpunk2077_Mod_Preset_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
     if not save_path:
-        print("Save path not selected, aborting export.")
+        print("No save path selected, aborting export.")
         return
 
-    progress_window = ctk.CTkToplevel(app)
-    progress_window.title("Exporting Mod Preset")
-    progress_window.geometry("400x150")
-    progress_window.resizable(False, False)
-    progress_window.configure(fg_color=DARK_BG)
-    progress_window.transient(app)
-    progress_window.grab_set()
+    current_dir = game_dir
+    temp_disabled_path = os.path.join(current_dir, TEMP_DISABLED_DIR)
+    mods = rebuild_mods_dictionary(current_dir, temp_disabled_path)
+    core_mods = ["archivexl", "codeware", "tweakxl"]
+    equipment_ex_paths = CORE_DEPENDENCIES["EquipmentEx"]["path"]
 
-    app_x = app.winfo_x()
-    app_y = app.winfo_y()
-    app_width = app.winfo_width()
-    app_height = app.winfo_height()
-    window_width = 400
-    window_height = 150
-    x = app_x + (app_width - window_width) // 2
-    y = app_y + (app_height - window_height) // 2
-    progress_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
-
-    ctk.CTkLabel(progress_window, text="Exporting mod preset...", text_color=TEXT_COLOR, font=("Arial", 14)).pack(pady=20)
-    progress_bar = ctk.CTkProgressBar(progress_window, width=350)
-    progress_bar.pack(pady=20)
-    status_label_progress = ctk.CTkLabel(progress_window, text="", text_color=TEXT_COLOR, font=("Arial", 12))
-    status_label_progress.pack(pady=10)
-
+    # Count total files for progress
     total_files = 0
-    for mod_dir in selected_folders:
-        full_dir = os.path.join(current_dir, mod_dir)
-        if os.path.exists(full_dir):
-            for root, _, files in os.walk(full_dir):
-                total_files += len([f for f in files if os.path.isfile(os.path.join(root, f))])
-        if mod_dir == "red4ext/plugins":
-            red4ext_plugins_dir = os.path.join(current_dir, "red4ext", "plugins")
-            if os.path.exists(red4ext_plugins_dir):
-                for item in os.listdir(red4ext_plugins_dir):
-                    item_dir = os.path.join(red4ext_plugins_dir, item)
-                    if os.path.isdir(item_dir):
-                        normalized_name = item.lower()
-                        if normalized_name not in ["archivexl", "codeware", "tweakxl"]:
-                            for root, _, files in os.walk(item_dir):
-                                total_files += len([f for f in files if os.path.isfile(os.path.join(root, f))])
-    print(f"Total files to process: {total_files}")
+    for display_name, (mod_dir, mod_name, current_path) in mods.items():
+        if TEMP_DISABLED_DIR not in os.path.normpath(current_path) and mod_dir in selected_folders:
+            rel_path = os.path.relpath(current_path, current_dir)
+            normalized_rel = rel_path.replace("\\", "/").lower()
+            is_equipment_ex = (
+                normalized_rel == "r6/scripts/equipmentex" or
+                normalized_rel.startswith("r6/scripts/equipmentex/") or
+                any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+            )
+            is_core_red4ext = (mod_dir == "red4ext/plugins" and mod_name.lower() in core_mods)
+            if not is_equipment_ex and not is_core_red4ext:
+                if os.path.isfile(current_path):
+                    total_files += 1
+                elif os.path.isdir(current_path):
+                    for root, _, files in os.walk(current_path):
+                        total_files += len(files)
+
     if total_files == 0:
-        messagebox.showinfo("No Mods", "No mods found to export in the selected folders.")
-        progress_window.destroy()
+        messagebox.showinfo("No Mods", "No non-core mods found to export in selected folders.")
         return
 
+    # Create progress window
+    progress_window, progress_bar, status_label_progress = create_progress_window("Exporting Mod Preset", total_files)
+    set_window_icon(progress_window)  # Set the icon for the progress window
     progress_bar.set(0)
     progress_window.update()
 
@@ -1584,55 +1624,52 @@ def _export_with_progress(selected_folders):
     files_processed = 0
     try:
         with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for mod_dir in selected_folders:
-                full_dir = os.path.join(current_dir, mod_dir)
-                if not os.path.exists(full_dir):
-                    print(f"Directory not found: {full_dir}")
-                    continue
-                if mod_dir == "red4ext/plugins":
-                    red4ext_plugins_dir = os.path.join(current_dir, "red4ext", "plugins")
-                    for item in os.listdir(red4ext_plugins_dir):
-                        item_dir = os.path.join(red4ext_plugins_dir, item)
-                        if os.path.isdir(item_dir):
-                            normalized_name = item.lower()
-                            if normalized_name not in ["archivexl", "codeware", "tweakxl"]:
-                                for root, _, files in os.walk(item_dir):
-                                    for file in files:
-                                        file_path = os.path.join(root, file)
-                                        if os.path.isfile(file_path):
-                                            arcname = os.path.relpath(file_path, current_dir)
-                                            print(f"Attempting to add: {file_path} as {arcname}")
-                                            try:
-                                                zipf.write(file_path, arcname)
-                                                files_processed += 1
-                                                progress_bar.set(files_processed / total_files)
-                                                status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
-                                                progress_window.update()
-                                                print(f"Successfully added: {file_path}")
-                                            except Exception as e:
-                                                errors.append(f"Failed to add {file_path} to archive: {str(e)}")
-                                                print(f"Error adding {file_path}: {e}")
-                                            if files_processed % 10 == 0:
-                                                progress_window.update()
-                else:
-                    for root, _, files in os.walk(full_dir):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            if os.path.isfile(file_path):
-                                arcname = os.path.relpath(file_path, current_dir)
-                                print(f"Attempting to add: {file_path} as {arcname}")
-                                try:
-                                    zipf.write(file_path, arcname)
-                                    files_processed += 1
-                                    progress_bar.set(files_processed / total_files)
-                                    status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
-                                    progress_window.update()
-                                    print(f"Successfully added: {file_path}")
-                                except Exception as e:
-                                    errors.append(f"Failed to add {file_path} to archive: {str(e)}")
-                                    print(f"Error adding {file_path}: {e}")
-                                if files_processed % 10 == 0:
-                                    progress_window.update()
+            for display_name, (mod_dir, mod_name, current_path) in mods.items():
+                if TEMP_DISABLED_DIR not in os.path.normpath(current_path) and mod_dir in selected_folders:
+                    rel_path = os.path.relpath(current_path, current_dir)
+                    normalized_rel = rel_path.replace("\\", "/").lower()
+                    is_equipment_ex = (
+                        normalized_rel == "r6/scripts/equipmentex" or
+                        normalized_rel.startswith("r6/scripts/equipmentex/") or
+                        any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                    )
+                    is_core_red4ext = (mod_dir == "red4ext/plugins" and mod_name.lower() in core_mods)
+                    if not is_equipment_ex and not is_core_red4ext:
+                        full_dir = os.path.join(current_dir, mod_dir, mod_name)
+                        if os.path.isfile(full_dir):
+                            arcname = os.path.relpath(full_dir, current_dir)
+                            print(f"Attempting to add: {full_dir} as {arcname}")
+                            try:
+                                zipf.write(full_dir, arcname)
+                                files_processed += 1
+                                progress_bar.set(files_processed / total_files)
+                                status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
+                                progress_window.update()
+                                print(f"Successfully added: {full_dir}")
+                            except Exception as e:
+                                errors.append(f"Failed to add {full_dir} to archive: {str(e)}")
+                                print(f"Error adding {full_dir}: {e}")
+                            if files_processed % 10 == 0:
+                                progress_window.update()
+                        else:
+                            for root, _, files in os.walk(full_dir):
+                                for file in files:
+                                    file_path = os.path.join(root, file)
+                                    if os.path.isfile(file_path):
+                                        arcname = os.path.relpath(file_path, current_dir)
+                                        print(f"Attempting to add: {file_path} as {arcname}")
+                                        try:
+                                            zipf.write(file_path, arcname)
+                                            files_processed += 1
+                                            progress_bar.set(files_processed / total_files)
+                                            status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
+                                            progress_window.update()
+                                            print(f"Successfully added: {file_path}")
+                                        except Exception as e:
+                                            errors.append(f"Failed to add {file_path} to archive: {str(e)}")
+                                            print(f"Error adding {file_path}: {e}")
+                                        if files_processed % 10 == 0:
+                                            progress_window.update()
     except Exception as e:
         errors.append(f"Failed to create zip file {save_path}: {str(e)}")
         print(f"Zip creation failed: {e}")
@@ -1652,8 +1689,69 @@ def _export_with_progress(selected_folders):
             messagebox.showerror("Export Failed", "The export process completed but no file was created.")
     update_mod_count_label()
 
+def import_mods():
+    if is_game_running():
+        messagebox.showwarning("Game Running", "Cannot import mods while Cyberpunk 2077 is running!")
+        return
+    if not game_dir:
+        messagebox.showwarning("No Game Directory", "Please set the Cyberpunk 2077 directory in Settings first!")
+        return
+    zip_path = filedialog.askopenfilename(
+        filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
+        title="Select Mod Preset to Import"
+    )
+    if not zip_path:
+        print("No zip file selected, aborting import.")
+        return
+
+    # Create progress window
+    progress_window, progress_bar, status_label_progress = create_progress_window("Importing Mod Preset", 1)
+    progress_bar.set(0)
+    progress_window.update()
+
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zipf:
+            # Count total files for progress
+            total_files = len([name for name in zipf.namelist() if not name.endswith('/')])
+            if total_files == 0:
+                progress_window.destroy()
+                messagebox.showinfo("No Files", "The selected zip file contains no files to import.")
+                return
+            progress_bar.configure(determinate_speed=1.0/total_files)
+            files_processed = 0
+            errors = []
+            
+            for file_info in zipf.infolist():
+                if not file_info.filename.endswith('/'):
+                    try:
+                        zipf.extract(file_info, game_dir)
+                        files_processed += 1
+                        progress_bar.set(files_processed / total_files)
+                        status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
+                        progress_window.update()
+                        print(f"Extracted file: {file_info.filename}")
+                        if files_processed % 10 == 0:
+                            progress_window.update()
+                    except Exception as e:
+                        errors.append(f"Failed to extract {file_info.filename}: {str(e)}")
+                        print(f"Error extracting {file_info.filename}: {e}")
+
+        progress_window.destroy()
+        if errors:
+            messagebox.showerror("Import Errors", "\n".join(errors))
+            status_label.configure(text="Mod preset import completed with errors. Check details.")
+        else:
+            messagebox.showinfo("Import Successful", f"Mod preset imported to {game_dir}")
+            status_label.configure(text="Mod preset imported successfully!")
+        update_initial_ui()
+        show_mods()
+    except Exception as e:
+        progress_window.destroy()
+        messagebox.showerror("Import Failed", f"Failed to import mod preset: {str(e)}")
+        status_label.configure(text="Mod preset import failed.")
+
 def run_script():
-    global status_label
+    global status_label, log_vars
     if not game_dir:
         messagebox.showwarning("No Game Directory", "Please set the Cyberpunk 2077 directory in Settings first!")
         return False
@@ -1705,179 +1803,142 @@ def run_script():
     global last_core_mods_status
     last_core_mods_status = all_core_mods_installed
 
-    with open('Cyberpunk 2077 Mod List.txt', 'w') as file:
-        file.write(f"Cyberpunk 2077 Mod List Tool v{tool_Version} by Sammmy1036\n")
-        file.write(f"Nexus Mod Page https://www.nexusmods.com/cyberpunk2077/mods/20113\n")
-        file.write(f"List created on {datetime.datetime.now().strftime('%B %d, %Y at %I:%M:%S %p')}\n")
-        file.write(f"Game Version: {game_version} | Phantom Liberty DLC Installed: {'Yes' if phantom_liberty_installed else 'No'}\n")
-        
-        if all_core_mods_installed:
-            file.write("All Core Mods Installed: Yes\n")
-        else:
-            missing_str = ", ".join(missing_core_mods)
-            file.write(f"All Core Mods Installed: No. Missing Dependencies: {missing_str}\n")
-        
-        file.write(f"Total Mods Installed: {mod_count}\n")
-        file.write("-" * 120 + "\n")
-
-        if log_errors:
-            file.write("\nPotential Errors to Review\n")
-            file.write("=" * 120 + "\n")
-            for log_name, errors in log_errors.items():
-                file.write(f"\n{log_name} Errors:\n")
-                file.write("-" * 120 + "\n")
-                for error in errors:
-                    file.write(f"{error}\n")
-            file.write("=" * 120 + "\n")
-
-        write_items_from_dir(file, path1, archivemods, temp_disabled_path)
-        write_items_from_dir(file, path2, cetmods, temp_disabled_path)
-        write_items_from_dir(file, path3, r6scripts, temp_disabled_path)
-        write_items_from_dir(file, path4, r6tweaks, temp_disabled_path)
-
-        red4ext_plugins_dir = os.path.join(current_dir, "red4ext", "plugins")
-        if os.path.exists(red4ext_plugins_dir):
-            plugins = [item for item in os.listdir(red4ext_plugins_dir) if os.path.isdir(os.path.join(red4ext_plugins_dir, item))]
-            if plugins:
-                file.write(f"\nMods located in red4ext/plugins:\n")
-                file.write("-" * 120 + "\n")
-                for plugin in plugins:
-                    normalized_name = plugin.lower()
-                    if normalized_name not in ["archivexl", "codeware", "tweakxl"]:
-                        file.write(f"{plugin}\n")
-                        print(f"Wrote red4ext plugin mod: {plugin}")
+    try:
+        with open('Cyberpunk 2077 Mod List.txt', 'w') as file:
+            file.write(f"Cyberpunk 2077 Mod List Tool v{tool_Version} by Sammmy1036\n")
+            file.write(f"Nexus Mod Page https://www.nexusmods.com/cyberpunk2077/mods/20113\n")
+            file.write(f"List created on {datetime.datetime.now().strftime('%B %d, %Y at %I:%M:%S %p')}\n")
+            file.write(f"Game Version: {game_version} | Phantom Liberty DLC Installed: {'Yes' if phantom_liberty_installed else 'No'}\n")
+            
+            if all_core_mods_installed:
+                file.write("All Core Mods Installed: Yes\n")
             else:
-                file.write(f"\nNo mods detected in \"red4ext/plugins\" (excluding core mods).\n")
-                file.write("-" * 120 + "\n")
-        else:
-            file.write(f"\nError: The subfolder(s) red4ext/plugins were not found in the current location!\n")
-
-        for log_name, var in log_vars.items():
-            if not var.get():
-                continue
-            log_path = LOG_FILES[log_name].get("log_path")
-            if not log_path:
-                continue
-            full_log_path = os.path.join(current_dir, log_path)
-            file.write(f"\n{log_name} Log:\n")
+                missing_str = ", ".join(missing_core_mods)
+                file.write(f"All Core Mods Installed: No. Missing Dependencies: {missing_str}\n")
+            
+            file.write(f"Total Mods Installed: {mod_count}\n")
             file.write("-" * 120 + "\n")
-            log_read_success = False
-            if os.path.exists(full_log_path):
-                try:
-                    with open(full_log_path, 'r', encoding='utf-8') as input_file:
-                        log_content = input_file.read()
-                        if log_content.strip():
-                            file.write(log_content)
-                            file.write("\n")
-                            log_read_success = True
-                        else:
-                            file.write(f"The {log_name} log is empty.\n")
-                except (OSError, UnicodeDecodeError) as e:
-                    file.write(f"Error reading {log_name}.log: {str(e)}\n")
-            if not log_read_success and "log_pattern" in LOG_FILES[log_name]:
-                recent_log = get_most_recent_log(current_dir, LOG_FILES[log_name]["log_pattern"])
-                if recent_log:
+
+            if log_errors:
+                file.write("\nPotential Errors to Review\n")
+                file.write("=" * 120 + "\n")
+                for log_name, errors in log_errors.items():
+                    file.write(f"\n{log_name} Errors:\n")
+                    file.write("-" * 120 + "\n")
+                    for error in errors:
+                        file.write(f"{error}\n")
+                file.write("=" * 120 + "\n")
+
+            write_items_from_dir(file, path1, archivemods, temp_disabled_path)
+            write_items_from_dir(file, path2, cetmods, temp_disabled_path)
+            write_items_from_dir(file, path3, r6scripts, temp_disabled_path)
+            write_items_from_dir(file, path4, r6tweaks, temp_disabled_path)
+
+            red4ext_plugins_dir = os.path.join(current_dir, "red4ext", "plugins")
+            if os.path.exists(red4ext_plugins_dir):
+                plugins = [item for item in os.listdir(red4ext_plugins_dir) if os.path.isdir(os.path.join(red4ext_plugins_dir, item))]
+                if plugins:
+                    file.write(f"\nMods located in red4ext/plugins:\n")
+                    file.write("-" * 120 + "\n")
+                    for plugin in plugins:
+                        normalized_name = plugin.lower()
+                        if normalized_name not in ["archivexl", "codeware", "tweakxl"]:
+                            file.write(f"{plugin}\n")
+                            print(f"Wrote red4ext plugin mod: {plugin}")
+                else:
+                    file.write(f"\nNo mods detected in \"red4ext/plugins\" (excluding core mods).\n")
+                    file.write("-" * 120 + "\n")
+            else:
+                file.write(f"\nError: The subfolder(s) red4ext/plugins were not found in the current location!\n")
+
+            for log_name, var in log_vars.items():
+                if not var.get():
+                    continue
+                log_path = LOG_FILES[log_name].get("log_path")
+                if not log_path:
+                    continue
+                full_log_path = os.path.join(current_dir, log_path)
+                file.write(f"\n{log_name} Log:\n")
+                file.write("-" * 120 + "\n")
+                log_read_success = False
+                if os.path.exists(full_log_path):
                     try:
-                        with open(recent_log, 'r', encoding='utf-8') as input_file:
-                            file.write(f"Using most recent log file: {os.path.basename(recent_log)}\n")
+                        with open(full_log_path, 'r', encoding='utf-8') as input_file:
                             log_content = input_file.read()
                             if log_content.strip():
                                 file.write(log_content)
                                 file.write("\n")
                                 log_read_success = True
                             else:
-                                file.write(f"The recent {log_name} log ({os.path.basename(recent_log)}) is empty.\n")
+                                file.write(f"The {log_name} log is empty.\n")
                     except (OSError, UnicodeDecodeError) as e:
-                        file.write(f"Error reading recent {log_name} log ({os.path.basename(recent_log)}): {str(e)}\n")
-            if not log_read_success:
-                file.write(f"The {log_name} log could not be found or read! Log not provided!\n")
+                        file.write(f"Error reading {log_name}.log: {str(e)}\n")
+                if not log_read_success and "log_pattern" in LOG_FILES[log_name]:
+                    recent_log = get_most_recent_log(current_dir, LOG_FILES[log_name]["log_pattern"])
+                    if recent_log:
+                        try:
+                            with open(recent_log, 'r', encoding='utf-8') as input_file:
+                                file.write(f"Using most recent log file: {os.path.basename(recent_log)}\n")
+                                log_content = input_file.read()
+                                if log_content.strip():
+                                    file.write(log_content)
+                                    file.write("\n")
+                                    log_read_success = True
+                                else:
+                                    file.write(f"The recent {log_name} log ({os.path.basename(recent_log)}) is empty.\n")
+                        except (OSError, UnicodeDecodeError) as e:
+                            file.write(f"Error reading recent {log_name} log ({os.path.basename(recent_log)}): {str(e)}\n")
+                if not log_read_success:
+                    file.write(f"The {log_name} log could not be found or read! Log not provided!\n")
 
-    mod_count_label.configure(text=f"Total Mods: {mod_count}")
-    game_version_label.configure(text=f"Game Version: {game_version}")
-    log_errors_label.configure(text=f"Log Errors Detected: {'Yes' if log_errors else 'No'}")
-    core_mods_label.configure(text=f"Core Mods Installed: {'Yes' if all_core_mods_installed else 'No'}")
-    if status_label.winfo_exists():
-        status_label.configure(text="Success! Check Cyberpunk 2077 Mod List.txt")
-    return bool(log_errors)
+        # Update footer labels
+        mod_count_label.configure(text=f"Total Mods: {mod_count}")
+        game_version_label.configure(text=f"Game Version: {game_version}")
+        log_errors_label.configure(text=f"Log Errors Detected: {'Yes' if log_errors else 'No'}")
+        core_mods_label.configure(text=f"Core Mods Installed: {'Yes' if all_core_mods_installed else 'No'}")
 
-def load_game_icon(size=(40, 40)):  # Increased size for visibility
-    print(f"load_game_icon called with size={size}, game_dir={game_dir}, WIN32_AVAILABLE={WIN32_AVAILABLE}")
-    if not game_dir or not WIN32_AVAILABLE:
-        print("Returning None due to missing game_dir or WIN32_AVAILABLE")
-        return None
-    exe_path = os.path.join(game_dir, "bin", "x64", "Cyberpunk2077.exe")
-    print(f"Checking exe_path: {exe_path}, exists: {os.path.exists(exe_path)}")
-    if not os.path.exists(exe_path):
-        print("Returning None due to non-existent exe_path")
-        return None
-    try:
-        # Extract large and small icon handles
-        large, small = win32gui.ExtractIconEx(exe_path, 0, 1)
-        print(f"Extracted icons - large: {large}, small: {small}")
-        if not large or not small:
-            print("Returning None due to no icons extracted")
-            return None
-        # Use the first large icon
-        hicon = large[0]
-        print(f"Using icon handle: {hicon}")
-        # Get icon info
-        icon_info = win32gui.GetIconInfo(hicon)
-        print(f"Icon info: {icon_info}")
-        # Extract integer handles from PyGdiHANDLE objects
-        hbmColor = int(icon_info[4]) if icon_info[4] else 0  # Color bitmap handle
-        hbmMask = int(icon_info[3]) if icon_info[3] else 0   # Mask bitmap handle
-        if not hbmColor and not hbmMask:
-            print("Returning None due to invalid bitmap handles")
-            return None
-        # Create bitmap from icon using the color handle if available
-        hdc = win32gui.CreateCompatibleDC(0)
-        if hbmColor:
-            bmp_info = win32gui.GetObject(hbmColor)
-            hbmp = win32gui.CreateCompatibleBitmap(hdc, bmp_info.bmWidth, bmp_info.bmHeight)
+        # Ensure status_label is valid and updated
+        if status_label is None or not status_label.winfo_exists():
+            print("Warning: status_label does not exist or is destroyed. Recreating status_label.")
+            status_label = ctk.CTkLabel(main, text="Success! Check Cyberpunk 2077 Mod List.txt", font=("Arial", 12, "bold"), text_color=TEXT_COLOR)
+            status_label.grid(row=3, column=0, pady=10, sticky="n")
         else:
-            hbmp = win32gui.CreateCompatibleBitmap(hdc, 32, 32)  # Default size
-        win32gui.SelectObject(hdc, hbmp)
-        win32gui.DrawIcon(hdc, 0, 0, hicon)
-        # Convert bitmap to PIL Image using GetDIBits
-        bmp_info = win32gui.GetObject(hbmp)
-        print(f"Bitmap info: width={bmp_info.bmWidth}, height={bmp_info.bmHeight}")
-        bmi = win32gui.BitmapInfo()
-        bmi.bmiHeader.biSize = ctypes.sizeof(win32gui.BitmapInfoHeader)
-        bmi.bmiHeader.biWidth = bmp_info.bmWidth
-        bmi.bmiHeader.biHeight = -bmp_info.bmHeight  # Negative for top-down DIB
-        bmi.bmiHeader.biPlanes = 1
-        bmi.bmiHeader.biBitCount = 32
-        bmi.bmiHeader.biCompression = win32con.BI_RGB
-        buffer_size = bmp_info.bmWidth * bmp_info.bmHeight * 4
-        buffer = (ctypes.c_byte * buffer_size)()
-        win32gui.GetDIBits(hdc, hbmp, 0, bmp_info.bmHeight, buffer, bmi, win32con.DIB_RGB_COLORS)
-        img = Image.frombuffer(
-            'RGBA',
-            (bmp_info.bmWidth, bmp_info.bmHeight),
-            buffer,
-            'raw',
-            'BGRA',
-            0,
-            1
-        )
-        # Clean up resources
-        win32gui.DeleteObject(hbmp)
-        win32gui.DeleteDC(hdc)
-        for icon in large + small:
-            win32gui.DestroyIcon(icon)
-        # Resize and return as CTkImage
-        img = img.resize(size, Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.ANTIALIAS)
-        ct_image = ctk.CTkImage(img, size=size)
-        print(f"Successfully created CTkImage with size {ct_image.size()}")
-        return ct_image
+            status_label.configure(text="Success! Check Cyberpunk 2077 Mod List.txt")
+        print("Status label updated to: Success! Check Cyberpunk 2077 Mod List.txt")
+        
+        # Force UI update
+        main.update()
+        main.update_idletasks()
+        app.update()
+
+        return bool(log_errors)
+
     except Exception as e:
-        print(f"Error extracting game icon: {e}")
-        # Enhanced fallback
-        fallback_icon = load_icon(os.path.join(SCRIPT_DIR, "icons", "launch_icon.png"))
-        if fallback_icon:
-            print(f"Falling back to launch_icon: {fallback_icon}")
-            return fallback_icon
-        print("No fallback icon available")
+        print(f"Error in run_script: {e}")
+        if status_label is None or not status_label.winfo_exists():
+            status_label = ctk.CTkLabel(main, text=f"Error generating mod list: {str(e)}", font=("Arial", 12, "bold"), text_color=ACCENT_RED)
+            status_label.grid(row=3, column=0, pady=10, sticky="n")
+        else:
+            status_label.configure(text=f"Error generating mod list: {str(e)}")
+        main.update()
+        main.update_idletasks()
+        app.update()
+        return False
+
+def load_game_icon(size=(40, 40)):
+    try:
+        base64_string = base64_strings.get("game_icon.png")
+        if base64_string:
+            img_data = base64.b64decode(base64_string)
+            pil_image = Image.open(BytesIO(img_data))
+            resampling = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.BILINEAR
+            pil_image = pil_image.resize(size, resampling)
+            return ctk.CTkImage(pil_image, size=size)
+        else:
+            print("No base64 data for game_icon.png")
+            return None
+    except Exception as e:
+        print(f"Error loading game icon: {e}")
         return None
 
 def launch_game():
@@ -1904,54 +1965,80 @@ last_launch_button_text = None
 
 def update_launch_button():
     global last_launch_button_state, last_launch_button_text
-    # Determine the desired state and text
+    if not launch_button.winfo_exists():
+        return
     if is_game_running():
         new_text = "Game Launched"
         new_state = "disabled"
     else:
         new_text = "Launch Game"
         new_state = "normal"
-    
-    # Only configure the button if the state or text has changed
     if new_state != last_launch_button_state or new_text != last_launch_button_text:
-        launch_button.configure(text=new_text, state=new_state)
-        last_launch_button_state = new_state
-        last_launch_button_text = new_text
-        print(f"Updated launch button: text={new_text}, state={new_state}")
-    
-    # Schedule the next update if the app is still running
+        try:
+            launch_button.configure(text=new_text, state=new_state)
+            last_launch_button_state = new_state
+            last_launch_button_text = new_text
+            print(f"Updated launch button: text={new_text}, state={new_state}")
+        except tk.TclError as e:
+            print(f"Error updating launch button: {e}")
     if app.winfo_exists():
-        app.after(2000, update_launch_button)
+        app.after(5000, update_launch_button)
 
 def show_home():
-    global status_label, current_page
+    global status_label, current_page, log_vars
     current_page = "home"
     clear_main()
-    global log_vars
 
     # Force layout update
     main.update()
 
     # Place the image at the very top, centered with y=-70
-    img_path = r"C:\Users\Sammy\Desktop\icons\mod_list_tool.png"
+    img_path = os.path.join(SCRIPT_DIR, "icons", "mod_list_tool.png")
+
     if os.path.exists(img_path):
-        img = ctk.CTkImage(Image.open(img_path), size=(250, 250))
+        img = ctk.CTkImage(Image.open(img_path), size=(450, 450))
         image_label = ctk.CTkLabel(main, image=img, text="")
-        image_label.place(x=(main.winfo_width() - 250) // 2, y=-70)
+        image_label.place(x=(main.winfo_width() - 250) // 2.8, y=-160)
     else:
         ctk.CTkLabel(main, text="Generate Mod List", font=("Orbitron", 22, "bold"), text_color=TEXT_COLOR).grid(row=0, column=0, pady=10, sticky="n")
 
-    # Configure grid to start content just below image (offset by image height + adjustment)
+    # Configure grid to start content just below image
     main.grid_columnconfigure(0, weight=1)
     start_button = ctk.CTkButton(main, text="Generate Mod List", command=run_script, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00")
-    start_button.grid(row=0, column=0, pady=(120, 10), sticky="n")  # Adjusted to start just below image bottom (250 - 70 + 10 padding)
+    start_button.grid(row=0, column=0, pady=(180, 25), sticky="n")
 
-    ctk.CTkLabel(main, text="Select Logs to Include:", text_color=TEXT_COLOR).grid(row=1, column=0, pady=(20, 5), sticky="n")
+    ctk.CTkLabel(main, text="Select Logs to Include:", text_color=TEXT_COLOR).grid(row=1, column=0, pady=(0, 5), sticky="n")
     
-    log_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
-    log_frame.grid(row=2, column=0, pady=5, sticky="nsew")
-    log_frame.grid_columnconfigure(0, weight=1)
-    
+    # Determine available logs dynamically
+    available_logs = {}
+    if game_dir:
+        for log_name, info in LOG_FILES.items():
+            log_path = info.get("log_path")
+            if log_path:
+                full_log_path = os.path.join(game_dir, log_path)
+                if os.path.exists(full_log_path):
+                    available_logs[log_name] = full_log_path
+                elif "log_pattern" in info:
+                    recent_log = get_most_recent_log(game_dir, info["log_pattern"])
+                    if recent_log:
+                        available_logs[log_name] = recent_log
+
+    # Update global log_vars
+    log_vars.clear()
+    log_vars.update({log_name: tk.BooleanVar(value=True) for log_name in available_logs})
+
+    # Calculate the number of rows needed
+    num_logs = len(available_logs) + 1  # +1 for "Select All Logs"
+
+    # Configure grid for dynamic centering
+    main.grid_rowconfigure(0, weight=0)  # Image row
+    main.grid_rowconfigure(1, weight=0)  # Label row
+    for i in range(2, num_logs + 2):
+        main.grid_rowconfigure(i, weight=1)  # Rows for checkboxes
+    main.grid_rowconfigure(num_logs + 2, weight=1)  # Bottom padding
+    main.grid_rowconfigure(num_logs + 3, weight=0)  # Status label row
+
+    # Add "Select All Logs" checkbox
     select_all_var = tk.BooleanVar(value=True)
     def toggle_all_logs():
         state = select_all_var.get()
@@ -1959,32 +2046,22 @@ def show_home():
             var.set(state)
         print(f"Select All Logs toggled: {state}")
     
-    ctk.CTkCheckBox(log_frame, text="Select All Logs", variable=select_all_var, command=toggle_all_logs,
-                    font=("Arial", 10), text_color=TEXT_COLOR, checkbox_height=18, checkbox_width=18,
-                    border_color=NEON_GREEN, fg_color=NEON_GREEN, hover_color=NEON_GREEN).pack(anchor="center", pady=2)
-    
-    log_vars = {log_name: tk.BooleanVar(value=True) for log_name in LOG_FILES}
-    for i, (log_name, var) in enumerate(log_vars.items()):
-        log_path = LOG_FILES[log_name].get("log_path")
-        if not log_path:
-            var.set(False)
-            continue
-        full_log_path = os.path.join(game_dir, log_path) if game_dir else ""
-        if not os.path.exists(full_log_path):
-            if "log_pattern" in LOG_FILES[log_name]:
-                recent_log = get_most_recent_log(game_dir, LOG_FILES[log_name]["log_pattern"]) if game_dir else None
-                if not recent_log:
-                    var.set(False)
-                    continue
-            else:
-                var.set(False)
-                continue
-        ctk.CTkCheckBox(log_frame, text=log_name, variable=var, font=("Arial", 10), text_color=TEXT_COLOR,
-                        checkbox_height=18, checkbox_width=18, border_color=NEON_GREEN, fg_color=NEON_GREEN, hover_color=NEON_GREEN).pack(anchor="center", pady=2)
+    ctk.CTkCheckBox(main, text="Select All Logs", variable=select_all_var, command=toggle_all_logs,
+                    font=("Arial", 12), text_color=TEXT_COLOR, checkbox_height=18, checkbox_width=18,
+                    border_color=NEON_GREEN, fg_color=NEON_GREEN, hover_color=NEON_GREEN).grid(row=2, column=0, pady=5)
 
-    status_label = ctk.CTkLabel(main, text="Click 'Generate Mod List' to compile the list!", font=("Arial", 12, "bold"), text_color=TEXT_COLOR)
-    status_label.grid(row=3, column=0, pady=10, sticky="n")
+    # Add individual log checkboxes
+    for i, (log_name, _) in enumerate(available_logs.items(), start=3):
+        ctk.CTkCheckBox(main, text=log_name, variable=log_vars[log_name], font=("Arial", 12), text_color=TEXT_COLOR,
+                        checkbox_height=18, checkbox_width=18, border_color=NEON_GREEN, fg_color=NEON_GREEN, hover_color=NEON_GREEN).grid(row=i, column=0, pady=5)
 
+    # Create or update status_label
+    if status_label is None or not status_label.winfo_exists():
+        status_label = ctk.CTkLabel(main, text="Click 'Generate Mod List' to compile the list!", font=("Arial", 12, "bold"), text_color=TEXT_COLOR)
+        status_label.grid(row=num_logs + 3, column=0, pady=10, sticky="n")
+    else:
+        status_label.configure(text="Click 'Generate Mod List' to compile the list!")
+        status_label.grid(row=num_logs + 3, column=0, pady=10, sticky="n")
 
 def show_core_mods():
     global status_label, current_page
@@ -1996,7 +2073,8 @@ def show_core_mods():
 
     current_dir = game_dir
     # Place the image at the very top, centered with y=-70
-    img_path = r"C:\Users\Sammy\Desktop\icons\mod_list_tool.png"
+    img_path = os.path.join(SCRIPT_DIR, "icons", "mod_list_tool.png")
+
     if os.path.exists(img_path):
         img = ctk.CTkImage(Image.open(img_path), size=(250, 250))
         image_label = ctk.CTkLabel(main, image=img, text="")
@@ -2004,15 +2082,28 @@ def show_core_mods():
     else:
         ctk.CTkLabel(main, text="Core Mods Status", font=("Orbitron", 22, "bold"), text_color=TEXT_COLOR).grid(row=0, column=0, pady=10, sticky="n")
 
-    # Configure grid to start content just below image
+    # Configure main grid to allow status_frame to expand
     main.grid_columnconfigure(0, weight=1)
-    button_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
-    button_frame.grid(row=0, column=0, pady=(120, 10), sticky="n")  # Adjusted to start just below image bottom
-    ctk.CTkButton(button_frame, text="Disable Core Mods", command=disable_core_mods, fg_color=ACCENT_RED, text_color="white", hover_color="#94160C").pack(side="left", padx=5)
-    ctk.CTkButton(button_frame, text="Enable Core Mods", command=enable_core_mods, fg_color=NEON_GREEN, text_color="black", hover_color="#1ADB00").pack(side="left", padx=5)
+    main.grid_rowconfigure(0, weight=0)  # Image or title row
+    main.grid_rowconfigure(1, weight=1)  # Status frame row (expandable)
+    main.grid_rowconfigure(2, weight=0)  # Status label row
+    main.grid_rowconfigure(3, weight=0)  # Button frame row
 
     status_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
-    status_frame.grid(row=1, column=0, pady=10, sticky="nsew")
+    status_frame.grid(row=1, column=0, pady=(120, 10), padx=10, sticky="nsew")  # Adjusted to start below image and expand
+    status_frame.grid_columnconfigure(0, weight=1)  # Center content
+    for i in range(len(CORE_DEPENDENCIES)):  # Configure rows dynamically based on number of dependencies
+        status_frame.grid_rowconfigure(i, weight=1, minsize=40)  # Uniform row height
+
+    # Status label moved above buttons
+    status_label = ctk.CTkLabel(main, text="Click 'Enable/Disable Core Mods' to manage core mods!", font=("Arial", 12, "bold"), text_color=TEXT_COLOR)
+    status_label.grid(row=2, column=0, pady=10, sticky="n")
+
+    # Button frame moved below status label
+    button_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
+    button_frame.grid(row=3, column=0, pady=10, sticky="n")
+    ctk.CTkButton(button_frame, text="Disable Core Mods", command=disable_core_mods, fg_color=ACCENT_RED, text_color="white", hover_color="#94160C").pack(side="left", padx=5)
+    ctk.CTkButton(button_frame, text="Enable Core Mods", command=enable_core_mods, fg_color=NEON_GREEN, text_color="black", hover_color="#1ADB00").pack(side="left", padx=5)
 
     previous_status = {}
 
@@ -2029,29 +2120,52 @@ def show_core_mods():
             for widget in status_frame.winfo_children():
                 widget.destroy()
 
+            # Use uniform grid for consistent column alignment across all rows
             for i, (mod_name, info) in enumerate(status_data.items()):
-                frame = ctk.CTkFrame(status_frame, fg_color=DARK_BG)
-                frame.grid(row=i, column=0, padx=10, pady=5, sticky="ew")
+                # Outer frame for each mod
+                outer_frame = ctk.CTkFrame(status_frame, fg_color=DARK_BG)
+                outer_frame.grid(row=i, column=0, sticky="ew")  # Remove individual pady, rely on row configuration
+                outer_frame.grid_columnconfigure(0, weight=1)  # Inner frame column
+                outer_frame.grid_columnconfigure(1, weight=0, minsize=80)  # Install button column with fixed width
 
-                name_label = ctk.CTkLabel(frame, text=mod_name, font=("Arial", 10, "bold"), text_color=TEXT_COLOR, cursor="hand2")
-                name_label.pack(side="left")
-                name_label.bind("<Button-1>", lambda e, id=CORE_DEPENDENCIES[mod_name]["id"]: webbrowser.open(f"https://www.nexusmods.com/cyberpunk2077/mods/{id}"))
+                # Inner frame for labels
+                inner_frame = ctk.CTkFrame(outer_frame, fg_color=DARK_BG)
+                inner_frame.grid(row=0, column=0, sticky="nsew")
+                inner_frame.grid_columnconfigure(0, weight=1, uniform="col")  # Name column
+                inner_frame.grid_columnconfigure(1, weight=1, uniform="col", minsize=100)  # Version column
+                inner_frame.grid_columnconfigure(2, weight=1, uniform="col", minsize=120)  # Status column
 
-                if info["version"] and info["version"] != "Unknown":
-                    version_label = ctk.CTkLabel(frame, text=f"v{info['version']}", font=("Arial", 10), text_color=TEXT_COLOR)
-                    version_label.pack(side="left", padx=5)
+                # Labels using grid with uniform alignment
+                name_label = ctk.CTkLabel(inner_frame, text=mod_name, font=("Arial", 10, "bold"), text_color=TEXT_COLOR, cursor="hand2")
+                name_label.grid(row=0, column=0, padx=5, pady=2, sticky="w")
+                def open_mod_page(event, mod_id=CORE_DEPENDENCIES[mod_name]["id"]):
+                    webbrowser.open(f"https://www.nexusmods.com/cyberpunk2077/mods/{mod_id}")
+                name_label.bind("<Button-1>", open_mod_page)
+                def on_enter(event, label=name_label):
+                    label.configure(text_color="#E89202")
+                    print(f"Hover enter on {mod_name} label")
+                def on_leave(event, label=name_label):
+                    label.configure(text_color=TEXT_COLOR)
+                    print(f"Hover leave on {mod_name} label")
+                name_label.bind("<Enter>", on_enter)
+                name_label.bind("<Leave>", on_leave)
+                print(f"Bound hover effects for {mod_name} label")
+
+                version_text = f"v{info['version']}" if info["version"] and info["version"] != "Unknown" else "N/A"
+                version_label = ctk.CTkLabel(inner_frame, text=version_text, font=("Arial", 10), text_color=TEXT_COLOR)
+                version_label.grid(row=0, column=1, padx=5, pady=2, sticky="w")
 
                 status_text = "Installed" if info["installed"] else "Not Installed"
                 status_color = NEON_GREEN if info["installed"] else ACCENT_RED
                 status_symbol = "✔" if info["installed"] else "✘"
-                install_status = ctk.CTkLabel(frame, text=f"{status_symbol} {status_text}", font=("Arial", 10), text_color=status_color)
-                install_status.pack(side="left", padx=5)
+                install_status = ctk.CTkLabel(inner_frame, text=f"{status_symbol} {status_text}", font=("Arial", 10), text_color=status_color)
+                install_status.grid(row=0, column=2, padx=5, pady=2, sticky="e")
 
                 if not info["installed"]:
-                    install_button = ctk.CTkButton(frame, text="Install",
+                    install_button = ctk.CTkButton(outer_frame, text="Install",
                                                   command=lambda name=mod_name: webbrowser.open(f"https://www.nexusmods.com/cyberpunk2077/mods/{CORE_DEPENDENCIES[name]['id']}"),
                                                   font=("Arial", 10), fg_color=NEON_GREEN, text_color="black")
-                    install_button.pack(side="right", padx=5)
+                    install_button.grid(row=0, column=1, padx=5, pady=2, sticky="e")
 
         previous_status = status_data.copy()
 
@@ -2074,7 +2188,8 @@ def show_log_viewer():
 
     current_dir = game_dir
     # Place the image at the very top, centered with y=-70
-    img_path = r"C:\Users\Sammy\Desktop\icons\mod_list_tool.png"
+    img_path = os.path.join(SCRIPT_DIR, "icons", "mod_list_tool.png")
+
     if os.path.exists(img_path):
         img = ctk.CTkImage(Image.open(img_path), size=(250, 250))
         image_label = ctk.CTkLabel(main, image=img, text="")
@@ -2186,13 +2301,17 @@ def show_log_viewer():
     status_label.grid(row=2, column=0, pady=10, sticky="n")
 
 def show_license():
+    # Check if license window is already open
+    for child in app.winfo_children():
+        if isinstance(child, ctk.CTkToplevel) and child.title() == "License":
+            print("License window already open, skipping creation")
+            return
+
     license_window = ctk.CTkToplevel(app)
     license_window.title("License")
     license_window.geometry("600x400")
     license_window.resizable(False, False)
     license_window.configure(fg_color=DARK_BG)
-    license_window.transient(app)
-    license_window.grab_set()
 
     # Center the window relative to the main app window
     app_x = app.winfo_x()
@@ -2205,9 +2324,12 @@ def show_license():
     y = app_y + (app_height - window_height) // 2
     license_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
+    # Add widgets after geometry
     license_textbox = ctk.CTkTextbox(license_window, font=("Arial", 12), text_color="#FFFFFF", fg_color="#333333", wrap="word", height=350, width=550)
     license_textbox.pack(pady=10, padx=10, fill="both", expand=True)
-    license_textbox.insert("0.0", """MIT License
+    license_textbox.insert("0.0", """---
+
+MIT License
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -2216,14 +2338,25 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.""")
     license_textbox.configure(state="disabled")
 
+    # Set modal properties after widgets
+    license_window.transient(app)
+    license_window.grab_set()
+
+    # Set icon after all properties and widgets
+    set_window_icon(license_window)
+
 def show_disclaimer():
+    # Check if disclaimer window is already open
+    for child in app.winfo_children():
+        if isinstance(child, ctk.CTkToplevel) and child.title() == "Disclaimer":
+            print("Disclaimer window already open, skipping creation")
+            return
+
     disclaimer_window = ctk.CTkToplevel(app)
     disclaimer_window.title("Disclaimer")
     disclaimer_window.geometry("600x400")
     disclaimer_window.resizable(False, False)
     disclaimer_window.configure(fg_color=DARK_BG)
-    disclaimer_window.transient(app)
-    disclaimer_window.grab_set()
 
     # Center the window relative to the main app window
     app_x = app.winfo_x()
@@ -2236,9 +2369,10 @@ def show_disclaimer():
     y = app_y + (app_height - window_height) // 2
     disclaimer_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
+    # Add widgets after geometry
     disclaimer_textbox = ctk.CTkTextbox(disclaimer_window, font=("Arial", 12), text_color="#FFFFFF", fg_color="#333333", wrap="word", height=350, width=550)
     disclaimer_textbox.pack(pady=10, padx=10, fill="both", expand=True)
-    disclaimer_textbox.insert("0.0", """Disclaimer
+    disclaimer_textbox.insert("0.0", """---
 
 Cyberpunk 2077 Mod List Tool is an unofficial, fan-made project and is not affiliated with, endorsed by, or supported by CD PROJEKT S.A. or its affiliates. All trademarks, logos, and game assets related to Cyberpunk 2077 are the property of CD PROJEKT S.A.
 
@@ -2249,23 +2383,32 @@ The developer of this tool is not responsible for any damage, loss, game instabi
 For official modding support, refer to CD PROJEKT RED's REDmod tool and documentation.""")
     disclaimer_textbox.configure(state="disabled")
 
+    # Set modal properties after widgets
+    disclaimer_window.transient(app)
+    disclaimer_window.grab_set()
+
+    # Set icon after all properties and widgets
+    set_window_icon(disclaimer_window)
+
 def show_settings():
     global status_label, current_page
     current_page = "settings"
     clear_main()
+    
     # Place the image at the very top, centered with y=-70
-    img_path = r"C:\Users\Sammy\Desktop\icons\mod_list_tool.png"
+    img_path = os.path.join(SCRIPT_DIR, "icons", "mod_list_tool.png")
+
     if os.path.exists(img_path):
-        img = ctk.CTkImage(Image.open(img_path), size=(250, 250))
+        img = ctk.CTkImage(Image.open(img_path), size=(600, 600))
         image_label = ctk.CTkLabel(main, image=img, text="")
-        image_label.place(x=(main.winfo_width() - 250) // 2, y=-70)
+        image_label.place(x=(main.winfo_width() - 250) // 4, y=-160)
     else:
         ctk.CTkLabel(main, text="Settings", font=("Orbitron", 22, "bold"), text_color=TEXT_COLOR).grid(row=0, column=0, pady=10, sticky="n")
 
     # Configure grid to start content just below image
     main.grid_columnconfigure(0, weight=1)
     main.grid_columnconfigure(1, weight=1)  # Add second column for side-by-side buttons
-    ctk.CTkButton(main, text="Change Game Directory", command=change_game_directory, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00").grid(row=0, column=0, columnspan=2, pady=(120, 10), sticky="n")
+    ctk.CTkButton(main, text="Change Game Directory", command=change_game_directory, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00").grid(row=0, column=0, columnspan=2, pady=(300, 10), sticky="n")
     
     # Display current game directory
     current_dir_text = f"Current Game Directory: {game_dir if game_dir else 'Not Set'}"
@@ -2275,15 +2418,9 @@ def show_settings():
     status_label = ctk.CTkLabel(main, text="Click 'Change Game Directory' to update the game path!", font=("Arial", 12, "bold"), text_color=TEXT_COLOR)
     status_label.grid(row=2, column=0, columnspan=2, pady=10, sticky="n")
     
-    # Frame for side-by-side buttons
-    button_frame = ctk.CTkFrame(main, fg_color=DARK_BG)
-    button_frame.grid(row=3, column=0, columnspan=2, pady=10, sticky="n")
-    button_frame.grid_columnconfigure(0, weight=1)
-    button_frame.grid_columnconfigure(1, weight=1)
-    
-    # Side-by-side License and Disclaimer buttons
-    ctk.CTkButton(button_frame, text="View License", command=show_license, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00").grid(row=0, column=0, padx=10, sticky="e")
-    ctk.CTkButton(button_frame, text="View Disclaimer", command=show_disclaimer, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00").grid(row=0, column=1, padx=10, sticky="w")
+    # Side-by-side License and Disclaimer buttons directly in main
+    ctk.CTkButton(main, text="View License", command=show_license, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00").grid(row=3, column=0, padx=10, pady=10, sticky="e")
+    ctk.CTkButton(main, text="View Disclaimer", command=show_disclaimer, fg_color=NEON_YELLOW, text_color="black", hover_color="#DBBE00").grid(row=3, column=1, padx=10, pady=10, sticky="w")
 
 def clear_main():
     # Reset all column configurations
@@ -2348,6 +2485,7 @@ app = ctk.CTk()
 app.geometry("1200x700")
 app.title("Cyberpunk 2077 Mod Manager")
 app.resizable(False, False)
+set_window_icon(app)
 
 screen_width = app.winfo_screenwidth()
 screen_height = app.winfo_screenheight()
@@ -2378,22 +2516,29 @@ sidebar = ctk.CTkFrame(app, width=250, corner_radius=0, fg_color=DARK_BG)
 sidebar.grid(row=0, column=0, sticky="nsew")
 sidebar.grid_rowconfigure(5, weight=1)  # Weight for the main content, adjusted for 6 rows
 
-# Load icons using CTkImage with PIL
-def load_icon(file_path, size=(20, 20)):
+def load_icon(file_name, size=(20, 20)):
     try:
-        print(f"Loading icon from {file_path}")
-        pil_image = Image.open(file_path)  # Load image with PIL
-        return ctk.CTkImage(pil_image, size=size)  # Create CTkImage from PIL image
-    except (FileNotFoundError, IOError) as e:  # <--- Capture exception as 'e'
-        print(f"Error loading icon {file_path}: {e}")
-        return None  # Return None if icon is missing, button will use text only
+        # Use just the filename as the key, not the full path
+        base64_string = base64_strings.get(os.path.basename(file_name))
+        if base64_string:
+            img_data = base64.b64decode(base64_string)
+            pil_image = Image.open(BytesIO(img_data))
+            resampling = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.BILINEAR
+            pil_image = pil_image.resize(size, resampling)
+            return ctk.CTkImage(pil_image, size=size)
+        else:
+            print(f"No base64 data for {os.path.basename(file_name)}")
+            return None
+    except Exception as e:
+        print(f"Error loading icon {file_name}: {e}")
+        return None
 
 home_icon = load_icon(os.path.join(SCRIPT_DIR, "icons", "home_icon.png"))
 mods_icon = load_icon(os.path.join(SCRIPT_DIR, "icons", "mods_icon.png"))
 settings_icon = load_icon(os.path.join(SCRIPT_DIR, "icons", "settings_icon.png"))
 core_icon = load_icon(os.path.join(SCRIPT_DIR, "icons", "core_icon.png"))
 log_icon = load_icon(os.path.join(SCRIPT_DIR, "icons", "log_icon.png"))
-launch_icon = load_icon(os.path.join(SCRIPT_DIR, "icons", "launch_icon.png"))
+launch_icon = load_icon(os.path.join(SCRIPT_DIR, "icons", "game_icon.png"))
 
 # Row 0-4: Menu buttons
 ctk.CTkButton(sidebar, text="Home", command=show_home, image=home_icon, compound="left" if home_icon else "none", fg_color=DARK_BG, hover_color="#6B6B6B", anchor="w", font=("Arial", 12, "bold"), text_color="white", width=200, height=50, corner_radius=10).grid(row=0, column=0, pady=(20, 5), padx=10, sticky="w")
