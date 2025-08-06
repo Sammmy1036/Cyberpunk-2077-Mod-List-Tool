@@ -118,6 +118,14 @@ Navigate to the Settings page via the sidebar.
 
 Click Change Game Directory and select your Cyberpunk 2077 root directory.
 
+Checking the 'Automatically open the Mod List output file after generation' check box makes the Cyberpunk 2077 Mod List which is generated when clicking Generate Mod List from the Home page automatically open when ran. 
+
+Checking the 'Automatically select all logs by default when generating a Mod List' check box makes all logs checked by default when opening the application. 
+
+Checking the 'Include Potential Errors in Output File' check box will list any detected 'warnings' or 'errors' detected from any of the log files and puts them at the top of the generate Output File for review. 
+
+Checking the 'Include Disabled Mods in Output File' check box will make any of your disabled mods also appear in the Output File and they will be listed as (Disabled). 
+
 <br />
 
 _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
