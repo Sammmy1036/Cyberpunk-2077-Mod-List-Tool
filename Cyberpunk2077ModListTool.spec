@@ -7,8 +7,8 @@ block_cipher = None
 # Define version info
 version_info = VSVersionInfo(
     ffi=FixedFileInfo(
-        filevers=(2, 0, 0, 1),    # File version
-        prodvers=(2, 0, 0, 1),   # Product version
+        filevers=(2, 0, 0, 2),    # File version (2.0.0.2)
+        prodvers=(2, 0, 0, 2),   # Product version (2.0.0.2)
         mask=0x3f,                # Valid fields mask
         flags=0x0,                # File flags (0 = no special flags)
         fileType=0x1,             # File type (0x1 = application)
@@ -23,12 +23,12 @@ version_info = VSVersionInfo(
                     [
                         StringStruct('CompanyName', 'Nexus Mod Author Sammmy1036'),
                         StringStruct('FileDescription', 'Cyberpunk 2077 Mod List Tool'),
-                        StringStruct('FileVersion', '2.0.0.1'),
+                        StringStruct('FileVersion', '2.0.0.2'),
                         StringStruct('InternalName', 'Cyberpunk 2077 Mod List Tool'),
                         StringStruct('LegalCopyright', '©2025 Sammmy1036'),
                         StringStruct('OriginalFilename', 'Cyberpunk 2077 Mod List Tool.exe'),
                         StringStruct('ProductName', 'Cyberpunk 2077 Mod List Tool'),
-                        StringStruct('ProductVersion', '2.0.0.1')
+                        StringStruct('ProductVersion', '2.0.0.2')
                     ]
                 )
             ]
@@ -38,7 +38,7 @@ version_info = VSVersionInfo(
 )
 
 a = Analysis(
-    ['Cyberpunk2077ModListTool2.0.0.0.pyw'],
+    ['Cyberpunk2077ModListTool2.0.0.2.pyw'],
     pathex=[],
     binaries=[],
     datas=[
@@ -74,4 +74,3 @@ exe = EXE(
     icon='Cyberpunk 2077 Mod List Tool.ico',
     onefile=True
 )
-
