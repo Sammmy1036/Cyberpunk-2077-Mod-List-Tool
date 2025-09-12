@@ -2,8 +2,7 @@ from io import BytesIO
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from PIL import Image
-from threading import Thread
-from threading import Timer
+from threading import Thread, Timer
 from tkinter import messagebox, filedialog
 from win32file import CreateFile, SetFileTime, CloseHandle
 from win32con import FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING
@@ -15,12 +14,12 @@ import webbrowser
 import datetime, time
 import re
 import shutil, psutil
-import zipfile, py7zr, rarfile
+import zipfile, py7zr, rarfile, pyunpack, patoolib
 import winreg
 import requests
 import hashlib
 import chardet
-import subprocess, sys, platform, os
+import subprocess, sys, platform, os, threading
 
 if platform.system() == "Windows":
     import msvcrt
@@ -397,7 +396,7 @@ def save_game_dir_to_registry():
             _set_dword("IncludeErrorsInOutput", include_errors_in_output)
             _set_dword("IncludeDisabledInOutput", include_disabled_in_output)
 
-            # Save manual versions
+            # Save manual mod versions
             for mod_name, version in manual_versions.items():
                 winreg.SetValueEx(key, f"{mod_name}_Version", 0, winreg.REG_SZ, version or "")
         finally:
@@ -431,13 +430,11 @@ def load_game_dir_from_registry():
         include_errors_value     = int(bool(_get_value("IncludeErrorsInOutput", 0)))
         include_disabled_value   = int(bool(_get_value("IncludeDisabledInOutput", 0)))
 
-        # Manual versions
         for mod_name in ["EquipmentEx", "Redscript"]:
             manual_versions[mod_name] = _get_value(f"{mod_name}_Version", "") or ""
 
         winreg.CloseKey(key)
 
-        # Validate and apply
         if value and os.path.exists(os.path.join(value, "bin", "x64", "Cyberpunk2077.exe")):
             game_dir = value
             if auto_open_output is not None:
@@ -634,7 +631,7 @@ def get_dll_version(file_path):
 def get_cet_version(log_path):
     if not os.path.exists(log_path):
         return "Unknown"
-    encoding = "utf-8"  # default fallback
+    encoding = "utf-8"  # BUG FIX due to BOM issue uses a default fallback
     try:
         with open(log_path, 'rb') as f:
             raw_data = f.read()
@@ -717,7 +714,6 @@ def create_progress_window(title, total_items):
     progress_window.transient(app)
     progress_window.grab_set()
 
-    # Set icon after all properties and widgets
     set_window_icon(progress_window)
 
     return progress_window, progress_bar, status_label_progress
@@ -743,16 +739,14 @@ def rebuild_mods_dictionary(current_dir, temp_disabled_path):
                 )
                 is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
                 if mod_dir == os.path.normpath("bin/x64/plugins/cyber_engine_tweaks/mods") and not os.path.isdir(full_item_path):
-                    continue  # Only count directories in CET mods
+                    continue  
                 if not is_equipment_ex and not is_core_red4ext and not item.lower().endswith(('.log', '.ini', '.tmp')):
                     mods[display_name] = (mod_dir, item, full_item_path)
-        # Process disabled mods
         if os.path.exists(temp_mod_dir):
             for item in os.listdir(temp_mod_dir):
                 display_name = f"{item} ({mod_dir})"
                 full_item_path = os.path.join(temp_mod_dir, item)
-                # Compute relative path as if the file were in its original location
-                rel_path = os.path.relpath(full_item_path, temp_disabled_path)  # Relative to temp_disabled_path
+                rel_path = os.path.relpath(full_item_path, temp_disabled_path)  
                 original_rel_path = os.path.relpath(os.path.join(current_dir, rel_path), current_dir)
                 normalized_rel = original_rel_path.replace("\\", "/").lower()
                 is_equipment_ex = (
@@ -762,7 +756,7 @@ def rebuild_mods_dictionary(current_dir, temp_disabled_path):
                 )
                 is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
                 if mod_dir == os.path.normpath("bin/x64/plugins/cyber_engine_tweaks/mods") and not os.path.isdir(full_item_path):
-                    continue  # Only count directories in CET mods
+                    continue 
                 if not is_equipment_ex and not is_core_red4ext and not item.lower().endswith(('.log', '.ini', '.tmp')):
                     mods[display_name] = (mod_dir, item, full_item_path)
     return mods
@@ -802,7 +796,7 @@ def disable_core_mods(update_status_callback=None):
     save_game_dir_to_registry()
     if errors:
         messagebox.showerror("Errors Occurred", "\n".join(errors))
-        status_label.configure(text="Some core mods could not be disabled. Check details.")
+        status_label.configure(text="Some core mods could not be disabled.")
     else:
         status_label.configure(text="All core mods have been disabled.")
     
@@ -860,7 +854,7 @@ def enable_core_mods(update_status_callback=None):
     save_game_dir_to_registry()
     if errors:
         messagebox.showerror("Errors Occurred", "\n".join(errors))
-        status_label.configure(text="Some core mods could not be enabled. Check details.")
+        status_label.configure(text="Some core mods could not be enabled.")
     else:
         status_label.configure(text="All core mods have been enabled.")
 
@@ -1357,7 +1351,7 @@ def enable_all_mods(enabled_listbox, disabled_listbox, selected_dir_var, search_
         mods.clear()
         mods.update(rebuild_mods_dictionary(current_dir, os.path.join(current_dir, TEMP_DISABLED_DIR)))
 
-        status_text = ("Some mods could not be enabled or folder not fully removed. Check details."
+        status_text = ("Some mods could not be enabled or folder not fully removed."
                        if errors else
                        "All non-core mods have been enabled. Enable core mods separately if needed.")
 
@@ -1548,7 +1542,6 @@ def write_items_from_dir(file, path, mod_dir, temp_disabled_path):
         file.write("-" * 120 + "\n")
 
 def set_creation_time(file_path, timestamp):
-    """Set the creation time for a file or directory to match the given timestamp."""
     try:
         if not os.path.exists(file_path):
             print(f"Path does not exist: {file_path}")
@@ -1575,13 +1568,17 @@ def set_creation_time(file_path, timestamp):
         print(f"Error in set_creation_time for {file_path}: {str(e)}")
 
 def export_mods():
+    if not hasattr(threading, 'Event'):
+        messagebox.showerror("Error", "Threading module not properly imported. Please check your Python environment.")
+        print("Error: threading module not properly imported.")
+        return
     if is_game_running():
         messagebox.showwarning("Game Running", "Cannot export mods while Cyberpunk 2077 is running!")
         return
     if not game_dir:
         messagebox.showwarning("No Game Directory", "Please set the Cyberpunk 2077 directory in Settings first!")
         return
-    # Folder selection dialog
+
     class FolderSelectionWindow(ctk.CTkToplevel):
         def __init__(self, parent):
             super().__init__(parent)
@@ -1611,8 +1608,8 @@ def export_mods():
                                 fg_color=NEON_GREEN, hover_color=NEON_GREEN).pack(pady=5)
             button_frame = ctk.CTkFrame(self, fg_color=DARK_BG)
             button_frame.pack(pady=20)
-            ctk.CTkButton(button_frame, text="Confirm", command=self.confirm, fg_color=NEON_GREEN, text_color="black").pack(side="left", padx=10)
-            ctk.CTkButton(button_frame, text="Cancel", command=self.cancel, fg_color=ACCENT_RED, text_color="white").pack(side="left", padx=10)
+            ctk.CTkButton(button_frame, text="Confirm", command=self.confirm, fg_color=NEON_GREEN, text_color="black", hover_color="#1ADB00").pack(side="left", padx=10)
+            ctk.CTkButton(button_frame, text="Cancel", command=self.cancel, fg_color=ACCENT_RED, text_color="white", hover_color="#94160C").pack(side="left", padx=10)
             set_window_icon(self)
         def confirm(self):
             self.selected_folders = [folder for folder, var in self.folder_vars.items() if var.get()]
@@ -1620,27 +1617,59 @@ def export_mods():
         def cancel(self):
             self.selected_folders = []
             self.destroy()
+
     folder_window = FolderSelectionWindow(app)
     app.wait_window(folder_window)
     selected_folders = folder_window.selected_folders
     if not selected_folders:
         print("No folders selected, aborting export.")
         return
+
+    def is_rar_available():
+        rar_path = shutil.which("rar")
+        if rar_path:
+            print(f"RAR found in PATH at: {rar_path}")
+            return rar_path
+        possible_paths = [
+            r"C:\Program Files\WinRAR\rar.exe",
+            r"C:\Program Files (x86)\WinRAR\rar.exe",
+            r"C:\Users\Public\WinRAR\rar.exe"
+        ]
+        for path in possible_paths:
+            if os.path.isfile(path):
+                print(f"RAR found at: {path}")
+                return path
+        print("RAR not found in PATH or common locations.")
+        return None
+
+    filetypes = [("ZIP files", "*.zip"), ("7z files", "*.7z"), ("All files", "*.*")]
+    rar_path = is_rar_available()
+    if rar_path:
+        filetypes.insert(1, ("RAR files", "*.rar"))
     save_path = filedialog.asksaveasfilename(
         defaultextension=".zip",
-        filetypes=[("ZIP files", "*.zip"), ("7z files", "*.7z"), ("All files", "*.*")],
+        filetypes=filetypes,
         title="Save Mod Preset As",
         initialfile=f"Cyberpunk2077_Mod_Preset_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
     if not save_path:
         print("No save path selected, aborting export.")
         return
+
     current_dir = game_dir
     temp_disabled_path = os.path.join(current_dir, TEMP_DISABLED_DIR)
-    mods = rebuild_mods_dictionary(current_dir, temp_disabled_path)
+    try:
+        mods = rebuild_mods_dictionary(current_dir, temp_disabled_path)
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to rebuild mods dictionary: {str(e)}")
+        print(f"Error rebuilding mods dictionary: {e}")
+        return
+    if not mods:
+        messagebox.showinfo("No Mods", "No mods found in the selected directories.")
+        return
+
     core_mods = ["archivexl", "codeware", "tweakxl"]
     equipment_ex_paths = CORE_DEPENDENCIES["EquipmentEx"]["path"]
-    # Count total files for progress
     total_files = 0
     for display_name, (mod_dir, mod_name, current_path) in mods.items():
         if TEMP_DISABLED_DIR not in os.path.normpath(current_path) and mod_dir in selected_folders:
@@ -1661,130 +1690,298 @@ def export_mods():
     if total_files == 0:
         messagebox.showinfo("No Mods", "No non-core mods found to export in selected folders.")
         return
-    # Create progress window
-    progress_window, progress_bar, status_label_progress = create_progress_window("Exporting Mod Preset", total_files)
-    set_window_icon(progress_window)
+
+    cancel_export = threading.Event()
+    def create_progress_window_with_cancel(title, max_value):
+        window = ctk.CTkToplevel(app)
+        window.title(title)
+        window.geometry("400x250")
+        window.resizable(False, False)
+        window.configure(fg_color=DARK_BG)
+        window.transient(app)
+        
+        parent_x = app.winfo_x()
+        parent_y = app.winfo_y()
+        parent_width = app.winfo_width()
+        parent_height = app.winfo_height()
+        x = parent_x + (parent_width - 400) // 2
+        y = parent_y + (parent_height - 250) // 2
+        window.geometry(f"400x250+{x}+{y}")
+        
+        ctk.CTkLabel(window, text=title, font=("Arial", 14), text_color=TEXT_COLOR).pack(pady=10)
+        progress = ctk.CTkProgressBar(window, width=300)
+        progress.pack(pady=15)
+        count_label = ctk.CTkLabel(window, text=f"Processing: 0/{max_value}", font=("Arial", 12), text_color=TEXT_COLOR)
+        count_label.pack(pady=10)
+        current_folder_label = ctk.CTkLabel(window, text="", font=("Arial", 12), text_color=TEXT_COLOR)
+        current_folder_label.pack(pady=10)
+        status_label = ctk.CTkLabel(window, text="Exporting", font=("Arial", 12), text_color=TEXT_COLOR)
+        status_label.pack(pady=10)
+        
+        button_frame = ctk.CTkFrame(window, fg_color=DARK_BG, height=40)
+        button_frame.pack(pady=15, fill="x")
+        button_frame.pack_propagate(False)
+        
+        def cancel_action():
+            cancel_export.set()
+            status_label.configure(text="Cancelling...")
+            window.update()
+        
+        cancel_button = ctk.CTkButton(
+            button_frame, 
+            text="Cancel", 
+            command=cancel_action, 
+            fg_color=ACCENT_RED, 
+            text_color="white",
+            width=100,
+            height=30
+        )
+        cancel_button.pack(pady=5, padx=10, anchor="center")
+        
+        def on_close():
+            cancel_export.set()
+            window.destroy()
+        
+        window.protocol("WM_DELETE_WINDOW", on_close)
+        
+        set_window_icon(window)
+        
+        window.update_idletasks()
+        window.wait_visibility()
+        window.grab_set()
+        window.focus_force()
+        
+        return window, progress, count_label, current_folder_label, status_label
+
+    progress_window, progress_bar, count_label, current_folder_label, status_label = create_progress_window_with_cancel("Exporting Mod Preset", total_files)
     progress_bar.set(0)
-    progress_window.update()
-    errors = []
-    files_processed = 0
-    file_extension = os.path.splitext(save_path)[1].lower()
+
+    def export_task():
+        nonlocal total_files
+        errors = []
+        files_processed = 0
+        file_extension = os.path.splitext(save_path)[1].lower()
+        temp_dir = None
+        archive = None
+        temp_save_path = None
+
+        def update_progress():
+            nonlocal files_processed
+            if cancel_export.is_set():
+                return
+            progress_value = min(1.0, files_processed / total_files)
+            app.after(0, lambda: progress_bar.set(progress_value))
+            app.after(0, lambda: count_label.configure(text=f"Processing: {files_processed}/{total_files}"))
+            app.after(0, lambda: progress_window.update())
+
+        try:
+            print(f"Starting export to {save_path} with {total_files} files")
+            if file_extension == ".zip":
+                temp_fd, temp_save_path = tempfile.mkstemp(suffix='.zip', dir=os.path.dirname(save_path))
+                os.close(temp_fd)
+                with zipfile.ZipFile(temp_save_path, 'w', zipfile.ZIP_DEFLATED) as archive:
+                    for display_name, (mod_dir, mod_name, current_path) in mods.items():
+                        if cancel_export.is_set():
+                            print("Export cancelled by user")
+                            break
+                        if TEMP_DISABLED_DIR not in os.path.normpath(current_path) and mod_dir in selected_folders:
+                            rel_path = os.path.relpath(current_path, current_dir)
+                            normalized_rel = rel_path.replace("\\", "/").lower()
+                            is_equipment_ex = (
+                                normalized_rel == "r6/scripts/equipmentex" or
+                                normalized_rel.startswith("r6/scripts/equipmentex/") or
+                                any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                            )
+                            is_core_red4ext = (mod_dir == "red4ext/plugins" and mod_name.lower() in core_mods)
+                            if not is_equipment_ex and not is_core_red4ext:
+                                app.after(0, lambda mod_dir=mod_dir, mod_name=mod_name: current_folder_label.configure(text=f"{mod_dir}/{mod_name}"))
+                                full_dir = os.path.join(current_dir, mod_dir, mod_name)
+                                if os.path.isfile(full_dir):
+                                    arcname = os.path.relpath(full_dir, current_dir)
+                                    print(f"Attempting to add: {full_dir} as {arcname}")
+                                    try:
+                                        archive.write(full_dir, arcname)
+                                        files_processed += 1
+                                        update_progress()
+                                        print(f"Successfully added: {full_dir}")
+                                    except Exception as e:
+                                        errors.append(f"Failed to add {full_dir} to archive: {str(e)}")
+                                else:
+                                    for root, _, files in os.walk(full_dir):
+                                        if cancel_export.is_set():
+                                            print("Export cancelled during directory walk")
+                                            break
+                                        for file in files:
+                                            if cancel_export.is_set():
+                                                print("Export cancelled during file processing")
+                                                break
+                                            file_path = os.path.join(root, file)
+                                            if os.path.isfile(file_path):
+                                                arcname = os.path.relpath(file_path, current_dir)
+                                                try:
+                                                    archive.write(file_path, arcname)
+                                                    files_processed += 1
+                                                    update_progress()
+                                                except Exception as e:
+                                                    errors.append(f"Failed to add {file_path} to archive: {str(e)}")
+            elif file_extension == ".7z":
+                temp_fd, temp_save_path = tempfile.mkstemp(suffix='.7z', dir=os.path.dirname(save_path))
+                os.close(temp_fd)
+                archive = py7zr.SevenZipFile(temp_save_path, 'w')
+                try:
+                    for display_name, (mod_dir, mod_name, current_path) in mods.items():
+                        if cancel_export.is_set():
+                            print("Export cancelled by user")
+                            break
+                        if TEMP_DISABLED_DIR not in os.path.normpath(current_path) and mod_dir in selected_folders:
+                            rel_path = os.path.relpath(current_path, current_dir)
+                            normalized_rel = rel_path.replace("\\", "/").lower()
+                            is_equipment_ex = (
+                                normalized_rel == "r6/scripts/equipmentex" or
+                                normalized_rel.startswith("r6/scripts/equipmentex/") or
+                                any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                            )
+                            is_core_red4ext = (mod_dir == "red4ext/plugins" and mod_name.lower() in core_mods)
+                            if not is_equipment_ex and not is_core_red4ext:
+                                app.after(0, lambda mod_dir=mod_dir, mod_name=mod_name: current_folder_label.configure(text=f"{mod_dir}/{mod_name}"))
+                                full_dir = os.path.join(current_dir, mod_dir, mod_name)
+                                if os.path.isfile(full_dir):
+                                    arcname = os.path.relpath(full_dir, current_dir)
+                                    print(f"Attempting to add: {full_dir} as {arcname}")
+                                    try:
+                                        archive.write(full_dir, arcname)
+                                        files_processed += 1
+                                        update_progress()
+                                        print(f"Successfully added: {full_dir}")
+                                    except Exception as e:
+                                        errors.append(f"Failed to add {full_dir} to archive: {str(e)}")
+                                else:
+                                    for root, _, files in os.walk(full_dir):
+                                        if cancel_export.is_set():
+                                            print("Export cancelled during directory walk")
+                                            break
+                                        for file in files:
+                                            if cancel_export.is_set():
+                                                print("Export cancelled during file processing")
+                                                break
+                                            file_path = os.path.join(root, file)
+                                            if os.path.isfile(file_path):
+                                                arcname = os.path.relpath(file_path, current_dir)
+                                                print(f"Attempting to add: {file_path} as {arcname}")
+                                                try:
+                                                    archive.write(file_path, arcname)
+                                                    files_processed += 1
+                                                    update_progress()
+                                                    print(f"Successfully added: {file_path}")
+                                                except Exception as e:
+                                                    errors.append(f"Failed to add {file_path} to archive: {str(e)}")
+                finally:
+                    if archive:
+                        archive.close()
+            elif file_extension == ".rar" and rar_path:
+                temp_dir = os.path.join(current_dir, "temp_rar_export")
+                os.makedirs(temp_dir, exist_ok=True)
+                try:
+                    for display_name, (mod_dir, mod_name, current_path) in mods.items():
+                        if cancel_export.is_set():
+                            break
+                        if TEMP_DISABLED_DIR not in os.path.normpath(current_path) and mod_dir in selected_folders:
+                            rel_path = os.path.relpath(current_path, current_dir)
+                            normalized_rel = rel_path.replace("\\", "/").lower()
+                            is_equipment_ex = (
+                                normalized_rel == "r6/scripts/equipmentex" or
+                                normalized_rel.startswith("r6/scripts/equipmentex/") or
+                                any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
+                            )
+                            is_core_red4ext = (mod_dir == "red4ext/plugins" and mod_name.lower() in core_mods)
+                            if not is_equipment_ex and not is_core_red4ext:
+                                app.after(0, lambda mod_dir=mod_dir, mod_name=mod_name: current_folder_label.configure(text=f"{mod_dir}/{mod_name}"))
+                                full_dir = os.path.join(current_dir, mod_dir, mod_name)
+                                if os.path.isfile(full_dir):
+                                    dest_path = os.path.join(temp_dir, os.path.relpath(full_dir, current_dir))
+                                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                                    with open(full_dir, 'rb') as source, open(dest_path, 'wb') as dest:
+                                        dest.write(source.read())
+                                    files_processed += 1
+                                    update_progress()
+                                else:
+                                    for root, _, files in os.walk(full_dir):
+                                        if cancel_export.is_set():
+                                            break
+                                        for file in files:
+                                            if cancel_export.is_set():
+                                                break
+                                            file_path = os.path.join(root, file)
+                                            if os.path.isfile(file_path):
+                                                rel_file_path = os.path.relpath(file_path, current_dir)
+                                                dest_path = os.path.join(temp_dir, rel_file_path)
+                                                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                                                with open(file_path, 'rb') as source, open(dest_path, 'wb') as dest:
+                                                    dest.write(source.read())
+                                                files_processed += 1
+                                                update_progress()
+                    if not cancel_export.is_set():
+                        app.after(0, lambda: progress_bar.set(1.0))
+                        app.after(0, lambda: status_label.configure(text="Finalizing..."))
+                        app.after(0, progress_window.update())
+                        print(f"Executing RAR command with path: {rar_path}")
+                        result = subprocess.run(f'"{rar_path}" a -r "{save_path}" *', shell=True, cwd=temp_dir, check=True, capture_output=True, text=True)
+                        if result.stderr:
+                            print(f"RAR command error: {result.stderr}")
+                except subprocess.CalledProcessError as e:
+                    errors.append(f"Failed to create RAR archive {save_path}: {str(e)}")
+                    if hasattr(e, 'stderr'):
+                        print(f"Error details: {e.stderr}")
+                except FileNotFoundError:
+                    errors.append(f"RAR executable not found at {rar_path}")
+                except PermissionError:
+                    errors.append(f"Permission denied accessing RAR at {rar_path}")
+                finally:
+                    if temp_dir and os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+            else:
+                raise ValueError("Unsupported file extension. Please use .zip, .7z, or .rar")
+        except Exception as e:
+            errors.append(f"Failed to create archive file {save_path}: {str(e)}")
+        finally:
+            def show_message_and_close(title, message):
+                def show_and_close():
+                    messagebox.showinfo(title, message, parent=app)
+                    app.after(500, progress_window.destroy)
+                app.after(0, show_and_close)
+            if cancel_export.is_set() or errors:
+                if temp_save_path and os.path.exists(temp_save_path):
+                    os.remove(temp_save_path)
+                if os.path.exists(save_path):
+                    os.remove(save_path)
+                if cancel_export.is_set():
+                    show_message_and_close("Export Cancelled", "Mod preset export was cancelled.")
+                    if status_label.winfo_exists():
+                        app.after(0, lambda: status_label.configure(text="Cancelled"))
+                else:
+                    show_message_and_close("Export Errors", "\n".join(errors))
+                    if status_label.winfo_exists():
+                        app.after(0, lambda: status_label.configure(text="Completed with errors"))
+            else:
+                if temp_save_path and os.path.exists(temp_save_path):
+                    os.rename(temp_save_path, save_path)
+                print(f"Checking file existence before success: {os.path.exists(save_path)}")
+                if os.path.exists(save_path):
+                    show_message_and_close("Export Successful", f"Mod preset exported to {save_path}")
+                    if status_label.winfo_exists():
+                        app.after(0, lambda: status_label.configure(text="Exported successfully!"))
+                else:
+                    show_message_and_close("Export Failed", "The export process completed but no file was created.")
+                    if status_label.winfo_exists():
+                        app.after(0, lambda: status_label.configure(text="Export failed"))
+            app.after(0, update_mod_count_label)
+
     try:
-        if file_extension == ".zip":
-            with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as archive:
-                for display_name, (mod_dir, mod_name, current_path) in mods.items():
-                    if TEMP_DISABLED_DIR not in os.path.normpath(current_path) and mod_dir in selected_folders:
-                        rel_path = os.path.relpath(current_path, current_dir)
-                        normalized_rel = rel_path.replace("\\", "/").lower()
-                        is_equipment_ex = (
-                            normalized_rel == "r6/scripts/equipmentex" or
-                            normalized_rel.startswith("r6/scripts/equipmentex/") or
-                            any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
-                        )
-                        is_core_red4ext = (mod_dir == "red4ext/plugins" and mod_name.lower() in core_mods)
-                        if not is_equipment_ex and not is_core_red4ext:
-                            full_dir = os.path.join(current_dir, mod_dir, mod_name)
-                            if os.path.isfile(full_dir):
-                                arcname = os.path.relpath(full_dir, current_dir)
-                                print(f"Attempting to add: {full_dir} as {arcname}")
-                                try:
-                                    archive.write(full_dir, arcname)
-                                    files_processed += 1
-                                    progress_bar.set(files_processed / total_files)
-                                    status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
-                                    progress_window.update()
-                                    print(f"Successfully added: {full_dir}")
-                                except Exception as e:
-                                    errors.append(f"Failed to add {full_dir} to archive: {str(e)}")
-                                    print(f"Error adding {full_dir}: {e}")
-                                if files_processed % 10 == 0:
-                                    progress_window.update()
-                            else:
-                                for root, _, files in os.walk(full_dir):
-                                    for file in files:
-                                        file_path = os.path.join(root, file)
-                                        if os.path.isfile(file_path):
-                                            arcname = os.path.relpath(file_path, current_dir)
-                                            print(f"Attempting to add: {file_path} as {arcname}")
-                                            try:
-                                                archive.write(file_path, arcname)
-                                                files_processed += 1
-                                                progress_bar.set(files_processed / total_files)
-                                                status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
-                                                progress_window.update()
-                                                print(f"Successfully added: {file_path}")
-                                            except Exception as e:
-                                                errors.append(f"Failed to add {file_path} to archive: {str(e)}")
-                                                print(f"Error adding {file_path}: {e}")
-                                            if files_processed % 10 == 0:
-                                                progress_window.update()
-        elif file_extension == ".7z":
-            with py7zr.SevenZipFile(save_path, 'w') as archive:
-                for display_name, (mod_dir, mod_name, current_path) in mods.items():
-                    if TEMP_DISABLED_DIR not in os.path.normpath(current_path) and mod_dir in selected_folders:
-                        rel_path = os.path.relpath(current_path, current_dir)
-                        normalized_rel = rel_path.replace("\\", "/").lower()
-                        is_equipment_ex = (
-                            normalized_rel == "r6/scripts/equipmentex" or
-                            normalized_rel.startswith("r6/scripts/equipmentex/") or
-                            any(normalized_rel == equip_path.replace("\\", "/").lower() for equip_path in equipment_ex_paths)
-                        )
-                        is_core_red4ext = (mod_dir == "red4ext/plugins" and mod_name.lower() in core_mods)
-                        if not is_equipment_ex and not is_core_red4ext:
-                            full_dir = os.path.join(current_dir, mod_dir, mod_name)
-                            if os.path.isfile(full_dir):
-                                arcname = os.path.relpath(full_dir, current_dir)
-                                print(f"Attempting to add: {full_dir} as {arcname}")
-                                try:
-                                    archive.write(full_dir, arcname)
-                                    files_processed += 1
-                                    progress_bar.set(files_processed / total_files)
-                                    status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
-                                    progress_window.update()
-                                    print(f"Successfully added: {full_dir}")
-                                except Exception as e:
-                                    errors.append(f"Failed to add {full_dir} to archive: {str(e)}")
-                                    print(f"Error adding {full_dir}: {e}")
-                                if files_processed % 10 == 0:
-                                    progress_window.update()
-                            else:
-                                for root, _, files in os.walk(full_dir):
-                                    for file in files:
-                                        file_path = os.path.join(root, file)
-                                        if os.path.isfile(file_path):
-                                            arcname = os.path.relpath(file_path, current_dir)
-                                            print(f"Attempting to add: {file_path} as {arcname}")
-                                            try:
-                                                archive.write(file_path, arcname)
-                                                files_processed += 1
-                                                progress_bar.set(files_processed / total_files)
-                                                status_label_progress.configure(text=f"Processing: {files_processed}/{total_files}")
-                                                progress_window.update()
-                                                print(f"Successfully added: {file_path}")
-                                            except Exception as e:
-                                                errors.append(f"Failed to add {file_path} to archive: {str(e)}")
-                                                print(f"Error adding {file_path}: {e}")
-                                            if files_processed % 10 == 0:
-                                                progress_window.update()
-        else:
-            raise ValueError("Unsupported file extension. Please use .zip or .7z")
+        export_thread = threading.Thread(target=export_task, daemon=True)
+        export_thread.start()
     except Exception as e:
-        errors.append(f"Failed to create archive file {save_path}: {str(e)}")
-        print(f"Archive creation failed: {e}")
-    finally:
         progress_window.destroy()
-    if errors:
-        messagebox.showinfo("Export Errors", "\n".join(errors))
-        if status_label.winfo_exists():
-            status_label.configure(text="Mod preset export completed with errors. Check details.")
-    else:
-        if os.path.exists(save_path):
-            messagebox.showinfo("Export Successful", f"Mod preset exported to {save_path}")
-            if status_label.winfo_exists():
-                status_label.configure(text="Mod preset exported successfully!")
-        else:
-            messagebox.showerror("Export Failed", "The export process completed but no file was created.")
-    update_mod_count_label()
+        messagebox.showerror("Error", f"Failed to start export thread: {str(e)}")
 
 def import_mods():
     global status_label, mods
@@ -1794,164 +1991,187 @@ def import_mods():
     if not game_dir:
         messagebox.showwarning("No Game Directory", "Please set the Cyberpunk 2077 directory in Settings first!")
         return
-
     input_file = filedialog.askopenfilename(
         title="Select Mod Preset",
-        filetypes=[("Archive files", "*.zip *.7z *.rar")]
+        filetypes=[("Archive files", "*.zip *.rar *.7z")]
     )
     if not input_file:
         return
-
     current_dir = game_dir
     errors = []
-
     try:
         ext = os.path.splitext(input_file)[1].lower()
         eligible = []
         core_mods = {"archivexl", "codeware", "tweakxl"}
-        equipment_ex_paths = CORE_DEPENDENCIES["EquipmentEx"]["path"]
-
+        equipment_ex_paths = [p.replace("\\", "/").lower() for p in CORE_DEPENDENCIES["EquipmentEx"]["path"]]
+        valid_extensions = ('.archive', '.xl', '.reds', '.lua', '.asi', '.dll', '.txt', '.toml', '.ini', '.otf', '.ttf', '.kark', '.json', '.png', '.dds')  # Kept for reference, but not used
+        valid_dirs = [os.path.normpath(d).replace("\\", "/") for d in MOD_DIRECTORIES]
         def _is_equipment_ex(rel_norm):
             return (
                 rel_norm == "r6/scripts/equipmentex"
                 or rel_norm.startswith("r6/scripts/equipmentex/")
-                or any(rel_norm == p.replace("\\", "/").lower() for p in equipment_ex_paths)
+                or any(rel_norm == p for p in equipment_ex_paths)
             )
-
-        if ext == ".zip":
-            with zipfile.ZipFile(input_file, 'r') as zf:
-                members = [m for m in zf.infolist() if not m.is_dir() and not m.filename.endswith("metadata.json")]
-                progress_window, progress_bar, status_label_progress = create_progress_window("Importing Mod Preset", len(members))
-                if not progress_window:
-                    return
-                for idx, member in enumerate(members, 1):
-                    rel_path = member.filename.replace("\\", "/")
-                    normalized_rel = rel_path.lower()
-                    mod_dir = os.path.dirname(rel_path)
-                    item = os.path.basename(rel_path)
-                    is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
-                    is_equipment_ex = _is_equipment_ex(normalized_rel)
-                    if not is_equipment_ex and not is_core_red4ext and not item.lower().endswith(('.log', '.ini', '.tmp')):
-                        try:
-                            dest_dir = os.path.join(current_dir, mod_dir)
-                            os.makedirs(dest_dir, exist_ok=True)
-                            dest = os.path.join(dest_dir, item)
-                            with zf.open(member) as source, open(dest, 'wb') as target:
-                                shutil.copyfileobj(source, target)
-                            # Debug the original date_time tuple
-                            print(f"Original date_time for {rel_path}: {member.date_time}")
-                            # Convert to timestamp using local time
-                            dt = datetime.datetime(*member.date_time)
-                            if dt.hour >= 20:  # Likely UTC, adjust to PDT
-                                dt = dt - datetime.timedelta(hours=7)
-                            date_time = dt.timestamp()
-                            print(f"Adjusted datetime: {dt}")
-                            print(f"Calculated timestamp: {date_time} (UTC: {datetime.datetime.utcfromtimestamp(date_time)}, Local: {datetime.datetime.fromtimestamp(date_time)})")
-                            # Set timestamp immediately to preserve original time
-                            os.utime(dest, (date_time, date_time))
-                            if platform.system() == "Windows" and WIN32_AVAILABLE:
-                                set_creation_time(dest, date_time)
-                            print(f"Extracted {rel_path} to {dest} with timestamp {datetime.datetime.fromtimestamp(date_time)}")
-                            eligible.append((mod_dir, item, dest))
-                        except Exception as e:
-                            errors.append(f"Failed to extract {rel_path}: {str(e)}")
-                    progress_bar.set(idx / len(members))
-                    status_label_progress.configure(text=f"Processing: {idx}/{len(members)}")
-                    progress_window.update()
+        def find_7z_executable():
+            if platform.system() != "Windows":
+                return None
+            for path in os.environ.get("PATH", "").split(os.pathsep):
+                exe_path = os.path.join(path, "7z.exe")
+                if os.path.isfile(exe_path):
+                    return exe_path
+            default_path = r"C:\Program Files\7-Zip\7z.exe"
+            if os.path.isfile(default_path):
+                return default_path
+            return None
+        temp_extract_dir = None
+        temp_zip_path = None
+        members = []
+        if ext in (".rar", ".7z"):
+            seven_zip_path = find_7z_executable()
+            if not seven_zip_path:
+                messagebox.showwarning(
+                    "7-Zip Required",
+                    "To import .rar or .7z files, install 7-Zip (free at www.7-zip.org) or convert your archive to .zip manually and try again."
+                )
+                return
+            progress_window, progress_bar, status_label_progress = create_progress_window("Extracting and Installing", 2) # 2 steps: extract, zip
+            if not progress_window:
+                return
+            progress_window.update_idletasks()
+            app.update()
+            time.sleep(0.1)
+            temp_extract_dir = os.path.join(tempfile.gettempdir(), "Cyberpunk2077ModListTool_Extract")
+            os.makedirs(temp_extract_dir, exist_ok=True)
+            try:
+                kwargs = {}
+                if platform.system() == "Windows":
+                    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+                result = subprocess.run(
+                    [seven_zip_path, "x", input_file, f"-o{temp_extract_dir}", "-y"], # -y = yes to all
+                    check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kwargs
+                )
+                print(f"Archive extracted to temp dir: {temp_extract_dir}")
+                progress_bar.set(0.5)
+                status_label_progress.configure(text="Extracting Archive...")
+                progress_window.update()
+            except subprocess.CalledProcessError as e:
+                messagebox.showerror("Extraction Error", f"Failed to extract {ext} archive: {e.stderr}")
+                if temp_extract_dir:
+                    shutil.rmtree(temp_extract_dir, ignore_errors=True)
                 progress_window.destroy()
-
-        elif ext == ".rar":
-            with rarfile.RarFile(input_file, 'r') as rf:
-                members = [m for m in rf.infolist() if not m.is_dir()]
-                progress_window, progress_bar, status_label_progress = create_progress_window("Importing Mod Preset", len(members))
-                if not progress_window:
-                    return
-                for idx, member in enumerate(members, 1):
-                    rel_path = member.filename.replace("\\", "/")
-                    normalized_rel = rel_path.lower()
-                    mod_dir = os.path.dirname(rel_path)
-                    item = os.path.basename(rel_path)
-                    is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
-                    is_equipment_ex = _is_equipment_ex(normalized_rel)
-                    if not is_equipment_ex and not is_core_red4ext and not item.lower().endswith(('.log', '.ini', '.tmp')):
-                        try:
-                            dest_dir = os.path.join(current_dir, mod_dir)
-                            os.makedirs(dest_dir, exist_ok=True)
-                            dest = os.path.join(dest_dir, item)
-                            with rf.open(member) as source, open(dest, 'wb') as target:
-                                shutil.copyfileobj(source, target)
-                            # Debug the original date_time tuple
-                            print(f"Original date_time for {rel_path}: {member.date_time}")
-                            # Convert to timestamp using local time
-                            dt = datetime.datetime(*member.date_time)
-                            if dt.hour >= 20:  # Likely UTC, adjust to PDT
-                                dt = dt - datetime.timedelta(hours=7)
-                            date_time = dt.timestamp()
-                            print(f"Adjusted datetime: {dt}")
-                            print(f"Calculated timestamp: {date_time} (UTC: {datetime.datetime.utcfromtimestamp(date_time)}, Local: {datetime.datetime.fromtimestamp(date_time)})")
-                            # Set timestamp immediately to preserve original time
-                            os.utime(dest, (date_time, date_time))
-                            if platform.system() == "Windows" and WIN32_AVAILABLE:
-                                set_creation_time(dest, date_time)
-                            print(f"Extracted {rel_path} to {dest} with timestamp {datetime.datetime.fromtimestamp(date_time)}")
-                            eligible.append((mod_dir, item, dest))
-                        except Exception as e:
-                            errors.append(f"Failed to extract {rel_path}: {str(e)}")
-                    progress_bar.set(idx / len(members))
-                    status_label_progress.configure(text=f"Processing: {idx}/{len(members)}")
-                    progress_window.update()
+                return
+            except Exception as e:
+                messagebox.showerror("Extraction Error", f"Unexpected error during extraction: {str(e)}")
+                if temp_extract_dir:
+                    shutil.rmtree(temp_extract_dir, ignore_errors=True)
                 progress_window.destroy()
-
-        elif ext == ".7z":
-            with py7zr.SevenZipFile(input_file, 'r') as zf:
-                zf.extractall(current_dir)
-                # Collect eligible files after extraction
-                for root, _, files in os.walk(current_dir):
-                    for file in files:
-                        full_path = os.path.join(root, file)
-                        rel_path = os.path.relpath(full_path, current_dir).replace(os.sep, "/")
-                        normalized_rel = rel_path.lower()
-                        mod_dir = os.path.dirname(rel_path)
-                        item = os.path.basename(rel_path)
-                        is_core_red4ext = (mod_dir == "red4ext/plugins" and item.lower() in core_mods)
-                        is_equipment_ex = _is_equipment_ex(normalized_rel)
-                        if not is_equipment_ex and not is_core_red4ext and not item.lower().endswith(('.log', '.ini', '.tmp')):
-                            eligible.append((mod_dir, item, full_path))
-                # 7z doesn't provide timestamp access, use current time as fallback
-                progress_window, progress_bar, status_label_progress = create_progress_window("Importing Mod Preset", len(eligible))
-                if not progress_window:
-                    return
-                for idx, (mod_dir, item, dest) in enumerate(eligible, 1):
+                return
+            temp_zip_path = os.path.join(tempfile.gettempdir(), "temp_mod_preset.zip")
+            try:
+                with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for root, _, files in os.walk(temp_extract_dir):
+                        for file in files:
+                            full_path = os.path.join(root, file)
+                            arcname = os.path.relpath(full_path, temp_extract_dir).replace("\\", "/")
+                            zipf.write(full_path, arcname)
+                input_file = temp_zip_path
+                print("Archive converted to .zip successfully")
+                progress_bar.set(1.0)
+                status_label_progress.configure(text="Installation complete")
+                progress_window.update()
+                app.after(1000, progress_window.destroy)
+            except Exception as e:
+                messagebox.showerror("Conversion Error", f"Failed to convert {ext} to .zip: {str(e)}")
+                if temp_extract_dir:
+                    shutil.rmtree(temp_extract_dir, ignore_errors=True)
+                if temp_zip_path and os.path.exists(temp_zip_path):
+                    os.remove(temp_zip_path)
+                progress_window.destroy()
+                return
+        with zipfile.ZipFile(input_file, 'r') as zf:
+            members = [m for m in zf.infolist() if not m.is_dir() and not m.filename.endswith("metadata.json")]
+            print(f"Processing files from {ext} archive: {[m.filename for m in members]}")
+            progress_window, progress_bar, status_label_progress = create_progress_window("Importing Mod Preset", len(members))
+            if not progress_window:
+                return
+            for idx, member in enumerate(members, 1):
+                rel_path = os.path.normpath(member.filename).replace("\\", "/")
+                parts = [p.lower() for p in rel_path.split("/")]  
+                adjusted_path = rel_path  
+                matched_dir = None
+                for d in valid_dirs:
+                    d_parts = [p.lower() for p in d.split("/")] 
+                    if len(d_parts) <= len(parts) and parts[:len(d_parts)] == d_parts:  
+                        adjusted_path = "/".join(parts)  
+                        matched_dir = d
+                        break
+                normalized_rel = adjusted_path.lower()
+                mod_dir = os.path.dirname(adjusted_path)
+                item = os.path.basename(adjusted_path)
+                is_core_red4ext = (mod_dir.lower() == "red4ext/plugins" and item.lower() in core_mods)
+                is_equipment_ex = _is_equipment_ex(normalized_rel)
+                file_ext = os.path.splitext(item)[1].lower()
+                print(f"File: {adjusted_path}, Matched dir: {matched_dir}, Mod dir: {mod_dir}, Extension: {file_ext}, Core mod: {is_core_red4ext}, EquipmentEx: {is_equipment_ex}")
+                if matched_dir and not is_equipment_ex and not is_core_red4ext:
                     try:
-                        date_time = time.time()
+                        dest_dir = os.path.join(current_dir, mod_dir)
+                        os.makedirs(dest_dir, exist_ok=True)
+                        dest = os.path.join(dest_dir, item)
+                        print(f"Attempting to extract to: {dest}")
+                        with zf.open(member) as source, open(dest, 'wb') as target:
+                            shutil.copyfileobj(source, target)
+                        dt = datetime.datetime(*member.date_time) if hasattr(member, 'date_time') and member.date_time else datetime.datetime.now()
+                        if dt.hour >= 20:
+                            dt = dt - datetime.timedelta(hours=7)
+                        date_time = dt.timestamp()
+                        print(f"Extracted {adjusted_path} to {dest} with timestamp {datetime.datetime.fromtimestamp(date_time)}")
                         os.utime(dest, (date_time, date_time))
                         if platform.system() == "Windows" and WIN32_AVAILABLE:
                             set_creation_time(dest, date_time)
-                        print(f"Set fallback timestamp for {dest} to {datetime.datetime.fromtimestamp(date_time)}")
+                        eligible.append((mod_dir, item, dest))
                     except Exception as e:
-                        errors.append(f"Failed to set timestamp for {rel_path}: {str(e)}")
-                    progress_bar.set(idx / len(eligible))
-                    status_label_progress.configure(text=f"Processing: {idx}/{len(eligible)}")
-                    progress_window.update()
-                progress_window.destroy()
-
-        else:
-            messagebox.showerror("Error", "Unsupported archive format!")
-            return
-
+                        errors.append(f"Failed to extract {adjusted_path} to {dest}: {str(e)}")
+                        print(f"Extraction error: {str(e)}")
+                else:
+                    print(f"Skipped {adjusted_path}: Invalid dir={matched_dir is None}, EquipmentEx={is_equipment_ex}, Core mod={is_core_red4ext}")
+                    try:
+                        fallback_dest_dir = os.path.join(current_dir, os.path.dirname(rel_path))
+                        os.makedirs(fallback_dest_dir, exist_ok=True)
+                        fallback_dest = os.path.join(fallback_dest_dir, os.path.basename(rel_path))
+                        print(f"Fallback extracting to: {fallback_dest}")
+                        with zf.open(member) as source, open(fallback_dest, 'wb') as target:
+                            shutil.copyfileobj(source, target)
+                        dt = datetime.datetime(*member.date_time) if hasattr(member, 'date_time') and member.date_time else datetime.datetime.now()
+                        if dt.hour >= 20:
+                            dt = dt - datetime.timedelta(hours=7)
+                        date_time = dt.timestamp()
+                        os.utime(fallback_dest, (date_time, date_time))
+                        if platform.system() == "Windows" and WIN32_AVAILABLE:
+                            set_creation_time(fallback_dest, date_time)
+                        eligible.append((os.path.dirname(rel_path), os.path.basename(rel_path), fallback_dest))
+                        print(f"Fallback extracted {rel_path} to {fallback_dest}")
+                    except Exception as e:
+                        errors.append(f"Fallback failed for {rel_path}: {str(e)}")
+                        print(f"Fallback error: {str(e)}")
+                progress_bar.set(idx / len(members))
+                status_label_progress.configure(text=f"Processing: {idx}/{len(members)}")
+                progress_window.update()
+            progress_window.destroy()
+        if temp_extract_dir:
+            shutil.rmtree(temp_extract_dir, ignore_errors=True)
+        if temp_zip_path and os.path.exists(temp_zip_path):
+            os.remove(temp_zip_path)
         if not eligible:
-            messagebox.showinfo("No Mods", "No valid mods found in the preset.")
+            messagebox.showinfo("No Mods", f"No valid mods found in the preset. Files scanned: {len(members)}\n\nCheck console for details on skipped files.")
             return
-
         mods = rebuild_mods_dictionary(current_dir, os.path.join(current_dir, TEMP_DISABLED_DIR))
         update_mod_count_label()
         if current_page == "mods":
             update_mod_list(enabled_listbox, disabled_listbox, selected_dir_var, mods, search_var.get())
         start_mod_observer()
-
         if errors:
             messagebox.showerror("Errors Occurred", "\n".join(errors))
-            status_label.configure(text="Some mods failed to import. Check details.")
+            status_label.configure(text="Some mods failed to import.")
         else:
             status_label.configure(text="Mod preset imported successfully.")
         app.after(5000, reset_status_label)
@@ -2061,7 +2281,7 @@ def run_script(num_logs):
             write_items_from_dir(file, path3, r6scripts, temp_disabled_path)
             write_items_from_dir(file, path4, r6tweaks, temp_disabled_path)
 
-            # Handle red4ext/plugins mods
+            # Handle red4ext/plugins mods had to seperate as I could not figure out bug
             red4ext_plugins_mods = []
             red4ext_temp_disabled_dir = os.path.join(temp_disabled_path, "red4ext", "plugins")
             if os.path.exists(red4ext_plugins_dir):
@@ -2282,7 +2502,7 @@ def show_home():
     log_vars.clear()
     log_vars.update({log_name: tk.BooleanVar(value=auto_select_all_logs.get() if auto_select_all_logs is not None else True) for log_name in available_logs})
 
-    num_logs = len(available_logs) + 1  # +1 for "Select All Logs"
+    num_logs = len(available_logs) + 1  # +1 due to Select All Logs
 
     main.grid_rowconfigure(0, weight=0)  # Image row
     main.grid_rowconfigure(1, weight=0)  # Label row
@@ -2291,7 +2511,7 @@ def show_home():
     main.grid_rowconfigure(num_logs + 2, weight=1)  # Bottom padding
     main.grid_rowconfigure(num_logs + 3, weight=0)  # Status label row
 
-    # "Select All Logs" checkbox
+    # Select All Logs checkbox
     select_all_var = tk.BooleanVar(value=auto_select_all_logs.get() if auto_select_all_logs is not None else True)
     def toggle_all_logs():
         state = select_all_var.get()
@@ -2347,6 +2567,7 @@ def show_core_mods():
     ctk.CTkButton(button_frame, text="Enable Core Mods", command=lambda: enable_core_mods(update_status), fg_color=NEON_GREEN, text_color="black", hover_color="#1ADB00").pack(side="left", padx=5)
     widget_map = {}
     previous_status = {}
+
     def update_status():
         if not main.winfo_exists() or not status_frame.winfo_exists():
             return
@@ -2356,7 +2577,7 @@ def show_core_mods():
         except Exception as e:
             status_data = {mod_name: {"installed": False, "path": info["path"], "version": None}
                            for mod_name, info in CORE_DEPENDENCIES.items()}
-        if not widget_map:  # Initial creation of widgets
+        if not widget_map: 
             # Header row
             ctk.CTkLabel(status_frame, text="Core Mod", font=("Arial", 12, "bold"), text_color=TEXT_COLOR).grid(row=0, column=0, padx=5, pady=2, sticky="nsew")
             ctk.CTkLabel(status_frame, text="Version", font=("Arial", 12, "bold"), text_color=TEXT_COLOR).grid(row=0, column=1, padx=5, pady=2, sticky="nsew")
@@ -2384,16 +2605,15 @@ def show_core_mods():
                 status_symbol = "✔" if info["installed"] else "✘"
                 status_widget = ctk.CTkLabel(status_frame, text=f"{status_symbol} {status_text}", font=("Arial", 10), text_color=status_color)
                 status_widget.grid(row=i, column=2, padx=5, pady=2, sticky="nsew")
-                # Create button based on installation status
                 if info["installed"]:
                     action_button = ctk.CTkButton(
                         status_frame,
                         text="No Action Required",
                         font=("Arial", 10),
-                        fg_color="#555555",  # Grey color to indicate disabled state
-                        text_color="#999999",  # Lighter grey for text to match disabled look
+                        fg_color="#555555",  # Grey
+                        text_color="#999999",  # Lighter grey 
                         hover=False,  # Disable hover effect
-                        state="disabled",  # Make button non-clickable
+                        state="disabled",  # Makes the button non-clickable 
                         width=100,
                         height=25
                     )
@@ -2416,7 +2636,6 @@ def show_core_mods():
                     "status_widget": status_widget,
                     "action_button": action_button
                 }
-        # Update existing widgets
         if previous_status != status_data:
             for mod_name, info in status_data.items():
                 widgets = widget_map.get(mod_name, {})
@@ -2429,7 +2648,6 @@ def show_core_mods():
                 status_color = NEON_GREEN if info["installed"] else ACCENT_RED
                 status_symbol = "✔" if info["installed"] else "✘"
                 widgets["status_widget"].configure(text=f"{status_symbol} {status_text}", text_color=status_color)
-                # Update button based on installation status
                 widgets["action_button"].grid_remove()
                 if info["installed"]:
                     new_button = ctk.CTkButton(
@@ -2506,7 +2724,6 @@ def show_log_viewer():
     log_listbox.configure(yscrollcommand=log_scrollbar.set)
     log_scrollbar.configure(command=log_listbox.yview)
 
-    # Text area for log content
     text_frame = ctk.CTkFrame(log_frame, fg_color=DARK_BG)
     text_frame.grid(row=0, column=1, padx=10, sticky="nsew")
     text_frame.grid_rowconfigure(1, weight=1) 
@@ -2616,7 +2833,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     license_window.transient(app)
     license_window.grab_set()
 
-    # Set icon after all properties and widgets
     set_window_icon(license_window)
 
 def show_disclaimer():
@@ -2874,7 +3090,6 @@ def show_settings():
 def clear_main():
     global current_image_label, after_tasks
 
-    # Destroy image explicitly first if it's placed
     if current_image_label and current_image_label.winfo_exists():
         try:
             current_image_label.destroy()
@@ -2883,7 +3098,6 @@ def clear_main():
             pass
         current_image_label = None
 
-    # Cancel any pending after tasks
     for after_id in list(after_tasks):
         try:
             app.after_cancel(after_id)
@@ -2892,23 +3106,20 @@ def clear_main():
 
     after_tasks.clear()
 
-    # Destroy status_label if it exists
     if 'status_label' in globals() and status_label.winfo_exists():
         status_label.destroy()
 
-    # Destroy all widgets in the main frame
     for widget in main.winfo_children():
         widget.destroy()
 
-    # Reset grid configuration
     for col in range(main.grid_size()[0]):
         main.grid_columnconfigure(col, weight=0)
     for row in range(main.grid_size()[1]):
         main.grid_rowconfigure(row, weight=0)
 
-    for col in range(2):  # Assuming max 2 columns (from Settings)
+    for col in range(2):  
         main.grid_columnconfigure(col, weight=0)
-    for row in range(20):  # Arbitrary large number for rows; adjust based on your max usage
+    for row in range(20):  
         main.grid_rowconfigure(row, weight=0)
 
 def update_initial_ui():
@@ -2950,7 +3161,7 @@ def update_initial_ui():
                         if not is_equipment_ex:
                             initial_mod_count += 1
 
-        # Counts any mods in red4ext/plugins
+        # Counts any mods in red4ext/plugins had to seperate from mod directories couldnt figure out bug
         red4ext_plugins_dir = os.path.join(current_dir, "red4ext", "plugins")
         if os.path.exists(red4ext_plugins_dir):
             for item in os.listdir(red4ext_plugins_dir):
