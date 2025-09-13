@@ -19,7 +19,7 @@ Optionally includes logs from ArchiveXL, Codeware, TweakXL, Cyber Engine Tweaks,
 **Mod Management**
 Temporarily enable or disable all non-core mods or individual mods via a dual-listbox interface (Enabled/Disabled Mods) with search and directory filtering.
 
-Import/Export mod presets from ZIP files with progress tracking and error handling.
+Import/Export mod presets from WinRar, Zip, and 7z files.
 
 **Core Mods Status**
 Monitors and displays real-time status on game version, essential dependencies (ArchiveXL, Codeware, Cyber Engine Tweaks, EquipmentEx, RED4ext, Redscript, TweakXL), and detected errors.
