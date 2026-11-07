@@ -46,24 +46,6 @@ Disabled mods are moved to `Temporarily Disabled Mods` inside your game folder, 
 
 Settings live in `%APPDATA%\Cyberpunk2077ModListTool\settings.json`. Your 2.x registry settings are migrated automatically on first launch.
 
-## Building from source
-
-**One click:** double-click `build_exe.bat`. It finds Python 3.10+, sets up a private build environment in `.venv-build` (first run only), installs the packages, runs the tests, builds `dist\Cyberpunk 2077 Mod List Tool.exe` and packs `dist\Cyberpunk 2077 Mod List Tool v<version>.zip` (exe + LICENSE + README) ready to upload. The version comes from `APP_VERSION` in `cp77mlt/__init__.py`. Options: `notest`, `noopen`, `nopause`, `fresh` (rebuild the environment).
-
-Manually:
-
-```
-pip install -r requirements.txt
-python Cyberpunk2077ModListTool.pyw          # run (add --debug for devtools)
-pyinstaller Cyberpunk2077ModListTool.spec    # build the single-file exe
-python -m pytest tests -q                    # backend tests
-python tests/ui_harness.py out_dir --nexus   # screenshots the UI against a fake game folder
-```
-
-Put the original `icons/mod_list_tool.png` (sidebar logo) and `icons/game_icon.png` (launch-button fallback) next to the spec file before building; they're bundled automatically when present.
-
-No pywin32 needed: file versions and DPAPI go through Windows APIs directly.
-
 Requires Windows 10/11 with the Microsoft Edge WebView2 runtime (preinstalled on current Windows).
 
 **Nexus SSO:** "Log in with Nexus" needs an application slug issued by Nexus Mods. Once you have one, set `NEXUS_APP_SLUG` in `cp77mlt/nexus.py` and the button appears. Until then, personal API keys work.
