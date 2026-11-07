@@ -44,8 +44,6 @@ A companion app for Cyberpunk 2077 modding. It catalogs your mods, checks the co
 
 Disabled mods are moved to `Temporarily Disabled Mods` inside your game folder, the same as in 2.x. When installing or updating a mod would overwrite files, the old files are moved to `Temporarily Disabled Mods\_Backups (replaced files)\<date>` instead of being deleted, so you can roll back. Settings shows how much space backups use, with buttons to open or empty the folder. (Older builds called this folder `_superseded`.)
 
-Settings live in `%APPDATA%\Cyberpunk2077ModListTool\settings.json`. Your 2.x registry settings are migrated automatically on first launch.
-
 Requires Windows 10/11 with the Microsoft Edge WebView2 runtime (preinstalled on current Windows).
 
 **Nexus SSO:** "Log in with Nexus" needs an application slug issued by Nexus Mods. Once you have one, set `NEXUS_APP_SLUG` in `cp77mlt/nexus.py` and the button appears. Until then, personal API keys work.
