@@ -116,6 +116,20 @@ def unregister(cfg) -> dict:
     return {"ok": True, **status()}
 
 
+def refresh_path(cfg) -> bool:
+    """If this tool owns nxm:// but the registered exe path is stale (moved, or switched
+    from the portable exe to the installed one), point it at the running exe again."""
+    if sys.platform != "win32":
+        return False
+    try:
+        if status()["registered"] and (_read_command() or "").lower() != own_command().lower():
+            register(cfg)  # keeps the remembered previous handler
+            return True
+    except OSError:
+        pass
+    return False
+
+
 def forward(url: str, previous_command: str | None) -> bool:
     """Hand a non-Cyberpunk link to the handler that owned nxm before us."""
     if not previous_command:

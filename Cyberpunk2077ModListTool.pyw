@@ -52,6 +52,16 @@ def setup_logging() -> None:
 
 
 def main() -> int:
+    # Run by the uninstaller: give nxm:// links back to the previous handler (Vortex, MO2, ...)
+    if "--unregister-nxm" in sys.argv:
+        from cp77mlt import nxm
+        from cp77mlt.config import Config
+        try:
+            if nxm.status()["registered"]:
+                nxm.unregister(Config())
+        except Exception:
+            pass
+        return 0
     # Started by the browser for a Nexus "Mod Manager Download" link: queue it for the running app
     nxm_links = [a for a in sys.argv[1:] if a.lower().startswith("nxm://")]
     if nxm_links:
@@ -68,6 +78,11 @@ def main() -> int:
     from cp77mlt import winstate
 
     api = Api()
+    try:
+        from cp77mlt import nxm
+        nxm.refresh_path(api._cfg)
+    except Exception:
+        pass
     geo = winstate.initial(api._cfg.get("window"))  # reopen where it was last closed
     window = webview.create_window(
         APP_NAME, url=WEB_INDEX, js_api=api, min_size=(winstate.MIN_W, winstate.MIN_H),
