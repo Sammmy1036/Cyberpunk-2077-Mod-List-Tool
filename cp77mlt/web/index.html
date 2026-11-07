@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cyberpunk 2077 Mod List Tool</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="splash" role="status" aria-live="polite">
+  <div class="splash-card">
+    <div class="slab-logo splash-logo text-only" id="splashLogo"><i class="mark"></i><span class="tool">Mod List Tool</span></div>
+    <div class="splash-bar"><i></i></div>
+    <div class="splash-msg" id="splashMsg">Starting up…</div>
+  </div>
+</div>
+<div class="app">
+  <nav class="rail" aria-label="Main">
+    <button class="user-chip" id="userChip" title="Nexus Mods account"></button>
+    <button class="nav" data-page="overview"><span>Overview</span></button>
+    <button class="nav" data-page="mods"><span>Mods</span><em id="navModCount"></em></button>
+    <button class="nav" data-page="core"><span>Core Frameworks</span><em id="navCoreFlag"></em></button>
+    <button class="nav" data-page="logs"><span>Logs</span><em id="navLogFlag"></em></button>
+    <button class="nav" data-page="nexus"><span>Nexus Mods</span><em id="navNexusFlag"></em></button>
+    <button class="nav" data-page="browse"><span>Browse Nexus</span></button>
+    <button class="nav" data-page="settings"><span>Settings</span></button>
+    <div class="rail-spacer" aria-hidden="true">
+      <!-- Circuit traces drawn with the UI's own vocabulary: graphite hairlines, diamond nodes,
+           the panel-heading slash marker, and one yellow trace that feeds the launch button. -->
+      <svg class="circuit" viewBox="0 0 228 300" width="228" height="300">
+        <g fill="none" stroke-width="1">
+          <path d="M182 0 V118 L160 140 V300" stroke="#3A3B40"/>
+          <path d="M200 0 V126 L178 148 V214 L196 232 V300" stroke="#3A3B40"/>
+          <path d="M44 0 V44 L64 64 V150 L44 170 V236" stroke="#2E2F34"/>
+          <path d="M28 0 V188 L44 204 V300" stroke="#2E2F34"/>
+          <path d="M12 96 H52" stroke="#FF2E4C" opacity=".55"/>
+          <path d="M216 262 V300" stroke="#FF2E4C" opacity=".55"/>
+        </g>
+        <!-- the live trace: ends where the launch button's frame begins -->
+        <path d="M170 0 V110 L144 136 V300" fill="none" stroke="#FCEE0A" stroke-width="3" class="live-trace"/>
+        <!-- diamond nodes (same shape as alert markers) -->
+        <g fill="#18181B" stroke="#9A998F" stroke-width="1">
+          <path d="M64 100 l5 5 -5 5 -5 -5z"/>
+          <path d="M160 176 l5 5 -5 5 -5 -5z"/>
+          <path d="M44 236 l5 5 -5 5 -5 -5z"/>
+        </g>
+        <path d="M144 214 l5 5 -5 5 -5 -5z" fill="#FCEE0A"/>
+        <!-- chamfered chip outlines -->
+        <g fill="#0E0E10" stroke="#2E2F34" stroke-width="1">
+          <path d="M80 160 H118 L126 168 V206 H80 Z"/>
+          <path d="M84 222 H114 V254 L106 262 H84 Z"/>
+        </g>
+        <g fill="#3A3B40"><rect x="88" y="170" width="16" height="2"/><rect x="88" y="176" width="26" height="2"/><rect x="88" y="182" width="10" height="2"/></g>
+        <!-- slash marker, as used on panel headings -->
+        <g transform="translate(90 236) skewX(-20)"><rect width="3" height="10" fill="#FCEE0A"/><rect x="6" width="3" height="10" fill="#FCEE0A"/><rect x="12" width="3" height="10" fill="#FCEE0A"/></g>
+        <g fill="#9A998F"><rect x="186" y="186" width="12" height="1.5"/><rect x="186" y="191" width="7" height="1.5"/></g>
+      </svg>
+    </div>
+    <button class="launch" id="launchBtn" title="Launch Cyberpunk 2077">
+      <span class="gicon"><img id="gameIcon" alt="" hidden>
+        <svg id="gameIconFallback" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11" fill="currentColor"/><path d="M16 15l9 5-9 5z" fill="#000"/></svg></span>
+      <span class="ltxt"><b id="launchLabel">Launch Game</b><small id="launchSub"></small></span>
+    </button>
+  </nav>
+
+  <main class="main">
+    <header class="slab">
+      <div class="slab-brand">
+        <div class="slab-logo" id="slabLogo" role="img" aria-label="Cyberpunk 2077 Mod List Tool">
+          <i class="mark" id="logoMark"></i><span class="tool">Mod List Tool</span>
+        </div>
+        <div class="slab-title">
+          <h1 id="pageTitle">Overview</h1>
+          <p id="pageSub"></p>
+        </div>
+      </div>
+      <div class="slab-meta" id="slabMeta"></div>
+      <div class="slab-stripe" aria-hidden="true"></div>
+    </header>
+    <section class="page" id="page"></section>
+  </main>
+
+  <footer class="status" id="statusBar">
+    <span id="appVersion">v3</span>
+    <span id="sbGame">No game folder</span>
+    <span id="sbManager"></span>
+    <span id="sbRun"></span>
+    <span class="grow"></span>
+    <a href="#" id="sbNexusPage">Nexus Mod Page</a>
+  </footer>
+</div>
+
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<div class="modal-back" id="modal" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

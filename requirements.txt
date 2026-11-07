@@ -1,0 +1,8 @@
+pywebview>=5.0
+psutil>=5.9
+requests>=2.31
+py7zr>=0.21
+websocket-client>=1.6   # only needed if Nexus SSO is enabled
+pyinstaller>=6.9        # build only
+pytest>=8               # tests only
+playwright>=1.40        # UI harness only (tests/ui_harness.py)

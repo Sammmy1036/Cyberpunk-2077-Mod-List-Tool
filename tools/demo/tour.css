@@ -1,0 +1,20 @@
+/* demo-only additions */
+.demo-banner { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 12px;
+  padding: 5px 8px 5px 14px; background: var(--cyan); color: var(--black); font-size: 12.5px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 10px 100%); }
+.demo-banner .btn { --edge: var(--black); color: var(--black); padding: 2px 10px; }
+.demo-banner span { opacity: .8; }
+.tour { position: fixed; left: 250px; bottom: 44px; z-index: 70; width: min(440px, calc(100vw - 280px)); padding: 16px 18px 14px;
+  background: var(--black); border: 1px solid var(--yellow); box-shadow: 0 0 0 1px #000, 0 18px 40px rgba(0,0,0,.6);
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%); display: none; }
+.tour.on { display: block; }
+.tour h3 { margin: 2px 0 6px; font-family: var(--font-cond); font-size: 24px; color: var(--yellow); }
+.tour p { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
+.tour-step { font-size: 12px; color: var(--bone-dim); }
+.tour-hl { outline: 2px solid var(--cyan) !important; outline-offset: 3px; animation: tourpulse 1.4s ease-in-out infinite; position: relative; z-index: 5; }
+@keyframes tourpulse { 50% { outline-color: rgba(19,226,245,.25); } }
+@media (prefers-reduced-motion: reduce) { .tour-hl { animation: none; } }
+.modal.wide { width: min(940px, calc(100vw - 520px)); margin-left: 470px; }
+.modal-back:has(.modal.wide) { align-items: start; justify-items: start; padding: 50px 30px 0 0; }
+.demo-report { max-height: calc(100vh - 290px); overflow: auto; font: 12px/1.5 var(--mono); background: var(--surface); border: 1px solid var(--graphite); padding: 10px 12px; white-space: pre; }
+.demo-report mark { background: rgba(255,46,76,.22); color: #FFC2CC; }

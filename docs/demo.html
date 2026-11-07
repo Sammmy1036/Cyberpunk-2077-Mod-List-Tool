@@ -1,0 +1,2349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cyberpunk 2077 Mod List Tool: interactive demo</title>
+<style>
+/* Cyberpunk 2077 Mod List Tool — UI
+   Tokens: graphite is the header surface with white type, yellow marks the active/primary action, cyan marks state, red is for faults only. */
+:root {
+  --yellow: #FCEE0A;
+  --yellow-deep: #D9CC00;
+  --black: #000;
+  --bone: #E9E8DF;
+  --bone-dim: #9A998F;
+  --cyan: #13E2F5;
+  --red: #FF2E4C;
+  --green: #2BE38A;
+  --orange: #FF9A1F;
+  --graphite: #26272B;
+  --graphite-2: #17181B;
+  --charcoal: #18181B;   /* poster background */
+  --surface: #0B0B0D;
+  --slab: #26272C;       /* header + splash card: dark graphite with white type */    /* panels sit on this so content stays clean */
+  --c: 14px; /* chamfer size */
+  --font: "Bahnschrift", "DIN Alternate", "D-DIN", "Arial Narrow", "Segoe UI", sans-serif;
+  --font-cond: "Bahnschrift Condensed", "Bahnschrift", "DIN Condensed", "Arial Narrow", sans-serif;
+  --mono: "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; background: var(--black); color: var(--bone); }
+body { font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; overflow: hidden; }
+button, input, select { font: inherit; color: inherit; }
+a { color: var(--cyan); }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+::selection { background: var(--yellow); color: var(--black); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--graphite); border: 3px solid var(--black); }
+::-webkit-scrollbar-thumb:hover { background: var(--yellow-deep); }
+::-webkit-scrollbar-track { background: transparent; }
+
+.app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: 1fr auto; height: 100vh; }
+
+/* ---------------------------------------------------------------- rail */
+.rail { grid-row: 1 / 2; display: flex; flex-direction: column; padding: 14px 0 16px; border-right: 1px solid var(--graphite); background: var(--black); min-height: 0; }
+/* Nexus account chip (all pages) */
+.user-chip { --edge: var(--graphite); display: flex; align-items: center; gap: 10px; margin: 0 14px 18px; padding: 6px 10px 6px 6px; text-align: left; cursor: pointer;
+  /* redraw the border along the cut corner (clip-path removes it), like the buttons */
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--edge) calc(50% - 1px) calc(50% + .5px), transparent calc(50% + .5px)) top right / 10px 10px no-repeat, var(--surface); border: 1px solid var(--edge); color: var(--bone);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%); }
+.user-chip:hover { --edge: var(--yellow); }
+.user-chip img, .user-chip .ph { width: 32px; height: 32px; flex: none; object-fit: cover; background: var(--graphite);
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%); }
+.user-chip .ph { display: grid; place-items: center; font-family: var(--font-cond); font-size: 17px; color: var(--yellow); }
+.user-chip span { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.user-chip b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-chip small { font-size: 11.5px; color: var(--bone-dim); }
+.user-chip small.prem { color: var(--yellow); }
+.user-chip.off { color: var(--bone-dim); }
+.user-chip.off small { color: var(--cyan); }
+.user-chip .dot { width: 7px; height: 7px; margin-left: auto; flex: none; background: var(--cyan); }
+.user-chip.off .dot { background: var(--graphite); }
+.nav { position: relative; display: flex; justify-content: space-between; align-items: center; margin: 2px 12px 2px 0; padding: 11px 16px 11px 20px;
+  background: none; border: 0; text-align: left; cursor: pointer; color: var(--bone-dim); font-size: 15px;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%); }
+.nav:hover { color: var(--bone); background: var(--graphite-2); }
+.nav.active { background: var(--yellow); color: var(--black); font-weight: 600; }
+.nav.active::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--cyan); }
+.nav em { font-style: normal; font-size: 12px; min-width: 22px; text-align: center; padding: 1px 6px; }
+.nav em:empty { display: none; }
+.nav em.bad { background: var(--red); color: var(--black); }
+.nav em.info { border: 1px solid currentColor; }
+/* Sidebar circuit art: drawn at its natural size (never scaled), pinned above the Launch button.
+   Extra height is filled by continuing its vertical traces upward, so any window size looks right. */
+.rail { --trace: var(--yellow); }
+.rail:has(.launch.running), .rail:has(.launch.launching) { --trace: var(--cyan); }
+.rail:has(.launch:disabled:not(.running):not(.launching)) { --trace: #3A3B40; }
+.rail-spacer { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; min-height: 40px; margin-top: 10px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 140px); mask-image: linear-gradient(to bottom, transparent 0, #000 140px); }
+.rail-spacer::before { content: ""; flex: 1 1 auto; min-height: 0;
+  background:
+    linear-gradient(var(--trace), var(--trace)) 168.5px 0 / 3px 100% no-repeat,
+    linear-gradient(#3A3B40, #3A3B40) 182px 0 / 1px 100% no-repeat,
+    linear-gradient(#3A3B40, #3A3B40) 200px 0 / 1px 100% no-repeat,
+    linear-gradient(#2E2F34, #2E2F34) 44px 0 / 1px 100% no-repeat,
+    linear-gradient(#2E2F34, #2E2F34) 28px 0 / 1px 100% no-repeat; }
+.rail-spacer .circuit { flex: none; display: block; width: 228px; height: 300px; }
+.rail-spacer .circuit .live-trace { stroke: var(--trace); }
+.launch { --edge: var(--yellow); position: relative; margin: 0 14px; display: flex; align-items: center; gap: 10px; padding: 9px 14px 9px 9px;
+  cursor: pointer; text-align: left; color: var(--bone); border: 1px solid var(--edge);
+  background: linear-gradient(to top left, transparent calc(50% - 1px), var(--edge) calc(50% - 1px) calc(50% + .5px), transparent calc(50% + .5px)) bottom right / 16px 16px no-repeat, var(--black);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%); }
+.launch .gicon { flex: none; width: 48px; height: 48px; display: grid; place-items: center; background: var(--yellow); color: var(--black);
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%); }
+.launch .gicon img { width: 44px; height: 44px; object-fit: cover; image-rendering: auto;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%); }
+.launch .gicon svg { width: 34px; height: 34px; }
+.launch .ltxt { display: flex; flex-direction: column; min-width: 0; }
+.launch b { font-family: var(--font-cond); font-size: 18px; line-height: 1.1; white-space: nowrap; }
+.launch small { color: var(--bone-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.launch:hover:not(:disabled) { background-color: var(--yellow); color: var(--black); }
+.launch:hover:not(:disabled) small { color: var(--black); }
+.launch:hover:not(:disabled) .gicon { background: var(--black); }
+.launch:disabled { --edge: var(--graphite); cursor: default; }
+.launch:disabled .gicon { filter: grayscale(1) brightness(.7); }
+.launch.running small, .launch.launching small { color: var(--cyan); }
+.launch.running, .launch.launching { --edge: var(--cyan); }
+.launch.launching .gicon { animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45; } }
+
+/* ---------------------------------------------------------------- slab header */
+.main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: repeating-linear-gradient(-55deg, rgba(255,255,255,.022) 0 70px, transparent 70px 170px), var(--charcoal); }
+.slab, .page { position: relative; z-index: 1; }
+.slab { position: relative; flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+  margin: 14px 18px 0 18px; padding: 22px 34px 20px 28px; min-height: 118px; background: var(--slab); color: #fff;
+  clip-path: polygon(0 0, calc(100% - 46px) 0, 100% 46px, 100% 100%, 64px 100%, 46px calc(100% - 18px), 0 calc(100% - 18px)); }
+.slab::after { /* inner hairline like the reference art */
+  content: ""; position: absolute; inset: 9px 10px 26px 10px; border-top: 1px solid rgba(255,255,255,.28); border-right: 1px solid rgba(255,255,255,.28);
+  clip-path: polygon(0 0, calc(100% - 40px) 0, 100% 40px, 100% 100%, 0 100%); pointer-events: none; }
+.slab-brand { display: flex; align-items: flex-end; gap: 26px; min-width: 0; }
+.slab-logo { flex: none; display: flex; flex-direction: column; align-items: stretch; width: 290px; }
+/* the logo PNG is turned into a cut-out (brightness -> alpha) in app.js, then used as a mask so it
+   prints in black on the yellow slab with no background box */
+.slab-logo .mark { display: block; width: 100%; aspect-ratio: var(--logo-ratio, 430 / 108); max-height: 92px; background: #fff;
+  -webkit-mask: var(--logo) left top / 100% 100% no-repeat; mask: var(--logo) left top / 100% 100% no-repeat; }
+.slab-logo .tool { margin-top: 2px; font-family: var(--font-cond); font-weight: 700; font-size: 18px; text-transform: uppercase;
+  letter-spacing: .5em; text-indent: .5em; text-align: center; }
+.slab-logo.text-only .mark { display: none; }
+.slab-logo.no-sub .tool { display: none; }
+.slab-logo .mark { -webkit-mask-size: contain; mask-size: contain; -webkit-mask-position: center; mask-position: center; }
+.slab-logo.text-only .tool { font-size: 30px; letter-spacing: .12em; text-align: left; text-indent: 0; }
+.slab-title { padding-left: 26px; border-left: 2px solid rgba(255,255,255,.85); min-width: 0; }
+.slab h1 { margin: 0; font-family: var(--font-cond); font-weight: 700; font-size: 38px; line-height: .95; text-transform: uppercase; letter-spacing: .01em; white-space: nowrap; }
+.slab p { margin: 6px 0 0; font-size: 13.5px; max-width: 52ch; }
+@media (max-width: 1280px) { .slab-logo { width: 230px; } .slab h1 { font-size: 32px; } }
+.slab-meta { position: relative; display: flex; gap: 26px; text-align: right; font-size: 12px; padding-bottom: 6px; flex: none; }
+.slab-meta:empty::after { display: none; }
+.slab-meta div b { display: block; font-family: var(--font-cond); font-size: 24px; line-height: 1; }
+.slab-stripe { position: absolute; left: 0; bottom: 0; width: 46px; height: 18px; background: var(--black); }
+
+/* ---------------------------------------------------------------- page */
+.page { flex: 1; min-height: 0; overflow: auto; padding: 20px 18px 24px; }
+.grid { display: grid; gap: 18px; }
+.cols-2 { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1250px) { .cols-2, .cols-3 { grid-template-columns: 1fr; } }
+
+.panel { position: relative; border: 1px solid var(--graphite); padding: 18px 20px; min-width: 0; background: var(--surface);
+  clip-path: polygon(0 0, calc(100% - var(--c)) 0, 100% var(--c), 100% 100%, 0 100%); }
+.panel::before { /* redraw the chamfer edge in the border colour so the outline stays closed */
+  content: ""; position: absolute; right: 0; top: 0; width: var(--c); height: var(--c); pointer-events: none;
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--graphite) calc(50% - 1px) calc(50% + .5px), transparent calc(50% + .5px)); }
+.panel h2 { margin: 0 0 12px; font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.panel h2::before { content: ""; flex: none; width: 22px; height: 10px;
+  background: repeating-linear-gradient(-45deg, var(--yellow) 0 3px, transparent 3px 6px); transform: skewX(-20deg); }
+.panel h2 .hint { margin-left: auto; font-weight: 400; font-size: 13px; color: var(--bone-dim); }
+.muted { color: var(--bone-dim); }
+.hatch { background: repeating-linear-gradient(135deg, transparent 0 7px, rgba(233,232,223,.06) 7px 8px); }
+
+/* readout (overview) */
+.readout { display: grid; grid-template-columns: auto 1fr; gap: 6px 34px; align-items: end; }
+.bignum { font-family: var(--font-cond); font-weight: 700; font-size: 132px; line-height: .8; color: var(--yellow); letter-spacing: -.03em; }
+.readout dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 0; font-size: 14px; }
+.readout dt { color: var(--bone-dim); }
+.readout dd { margin: 0; }
+.bar { display: flex; height: 6px; margin-top: 18px; gap: 2px; }
+.bar i { display: block; height: 100%; }
+
+.alerts { list-style: none; margin: 0; padding: 0; }
+.alerts li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--graphite); }
+.alerts li:first-child { border-top: 0; }
+.alerts .dot { flex: none; width: 11px; height: 11px; margin-top: 5px; background: var(--cyan); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.alerts .lvl-ok .dot { background: var(--green); }
+.alerts .lvl-warn .dot { background: var(--orange); }
+.alerts .lvl-bad .dot { background: var(--red); }
+.alerts .lvl-none .dot { background: var(--bone-dim); }
+.alerts .act { margin-left: auto; flex: none; }
+
+/* ---------------------------------------------------------------- controls */
+.btn { --edge: var(--bone-dim); display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--edge); padding: 8px 14px; cursor: pointer;
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--edge) calc(50% - 1px) calc(50% + .5px), transparent calc(50% + .5px)) top right / 8px 8px no-repeat;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%); white-space: nowrap; }
+.btn:hover { --edge: var(--bone); background-color: var(--graphite-2); }
+.btn.primary { background: var(--yellow); color: var(--black); border-color: var(--yellow); font-weight: 600; }
+.btn.primary:hover { background: var(--bone); border-color: var(--bone); }
+.btn.cyan { --edge: var(--cyan); color: var(--cyan); }
+.btn.danger { --edge: var(--red); color: var(--red); }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+.btn:disabled { opacity: .4; cursor: default; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.link { background: none; border: 0; padding: 0; color: var(--cyan); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+input[type=text], input[type=password], input[type=search], select {
+  background: var(--graphite-2); border: 1px solid var(--graphite); padding: 8px 12px; color: var(--bone); min-width: 0; }
+input:focus, select:focus { border-color: var(--yellow); outline: none; }
+.check { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 0; }
+.check input { appearance: none; width: 16px; height: 16px; margin: 0; border: 1px solid var(--bone-dim); display: grid; place-items: center; flex: none; cursor: pointer; }
+.check input:checked { background: var(--yellow); border-color: var(--yellow); }
+.check input:checked::after { content: ""; width: 8px; height: 4px; border: 2px solid var(--black); border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
+
+.seg { display: inline-flex; border: 1px solid var(--graphite); }
+.seg button { background: none; border: 0; padding: 7px 13px; color: var(--bone-dim); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--graphite); }
+.seg button.on { background: var(--bone); color: var(--black); }
+.seg button em { font-style: normal; opacity: .65; margin-left: 4px; }
+
+/* angular toggle switch */
+.switch { appearance: none; width: 42px; height: 20px; margin: 0; position: relative; cursor: pointer; flex: none;
+  background: var(--graphite); clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 14px; background: var(--bone-dim); transition: left .12s; }
+.switch:checked { background: var(--yellow); }
+.switch:checked::after { left: 23px; background: var(--black); }
+.switch:disabled { opacity: .45; cursor: not-allowed; }
+.switch.partial { background: repeating-linear-gradient(135deg, var(--yellow) 0 4px, var(--graphite) 4px 8px); }
+
+/* ---------------------------------------------------------------- mods table */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.toolbar .search { flex: 1 1 220px; display: flex; }
+.toolbar .search input { flex: 1; padding-left: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.subbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.chip { border: 1px solid var(--graphite); background: none; padding: 3px 10px; font-size: 12px; color: var(--bone-dim); cursor: pointer; }
+.chip.on { border-color: var(--cyan); color: var(--cyan); }
+.table { width: 100%; border-collapse: collapse; }
+.table th { position: sticky; top: -20px; background: var(--charcoal); z-index: 1; text-align: left; font-weight: 400; color: var(--bone-dim); font-size: 12px;
+  padding: 8px 10px; border-bottom: 1px solid var(--bone-dim); cursor: pointer; user-select: none; }
+.table th.sorted { color: var(--yellow); }
+.table td { padding: 9px 10px; border-bottom: 1px solid var(--graphite); vertical-align: middle; }
+.table tr.row { cursor: pointer; }
+.table tr.row:hover td { background: var(--graphite-2); }
+.table tr.row.sel td { background: rgba(19,226,245,.07); }
+.table tr.row.sel td:first-child { box-shadow: inset 3px 0 0 var(--cyan); }
+.table tr.off .name { color: var(--bone-dim); text-decoration: line-through; text-decoration-color: rgba(255,46,76,.6); }
+.table .name { font-size: 15px; }
+.table td.num { text-align: right; color: var(--bone-dim); font-variant-numeric: tabular-nums; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 6px; margin: 1px 3px 1px 0; border: 1px solid var(--graphite); color: var(--bone-dim); }
+.src { font-size: 12px; padding: 2px 7px; }
+.src.vortex { color: var(--black); background: var(--cyan); }
+.src.mo2 { color: var(--cyan); border: 1px solid var(--cyan); }
+.src.loose { color: var(--bone-dim); border: 1px solid var(--graphite); }
+.upd { color: var(--black); background: var(--yellow); font-size: 12px; padding: 2px 7px; }
+.empty { padding: 50px 20px; text-align: center; color: var(--bone-dim); }
+.empty b { display: block; color: var(--bone); font-size: 17px; margin-bottom: 6px; font-weight: 600; }
+
+#bulkHost { position: sticky; bottom: -24px; z-index: 2; }
+.bulk { display: flex; align-items: center; gap: 10px; margin: 0 -18px -24px; padding: 12px 18px;
+  background: var(--yellow); color: var(--black); }
+.bulk .btn { --edge: var(--black); }
+.bulk .btn:hover { --edge: var(--black); background-color: rgba(0,0,0,.08); }
+.bulk .btn.primary { background: var(--black); color: var(--yellow); }
+.bulk b { margin-right: auto; }
+
+/* ---------------------------------------------------------------- drawer */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 92vw); background: var(--black); border-left: 2px solid var(--yellow);
+  transform: translateX(105%); transition: transform .18s ease-out; z-index: 20; display: flex; flex-direction: column; }
+.drawer.open { transform: none; }
+.drawer header { padding: 22px 24px 16px; border-bottom: 1px solid var(--graphite); }
+.drawer header h3 { margin: 0 34px 6px 0; font-family: var(--font-cond); font-size: 30px; line-height: 1.05; }
+.drawer .close { position: absolute; top: 18px; right: 18px; width: 32px; height: 32px; border: 1px solid var(--graphite); background: none; cursor: pointer; font-size: 18px; line-height: 1; }
+.drawer .body { overflow: auto; padding: 18px 24px 28px; flex: 1; }
+.drawer h4 { margin: 20px 0 8px; font-size: 13px; font-weight: 400; color: var(--bone-dim); }
+.files { font-family: var(--mono); font-size: 12px; max-height: 280px; overflow: auto; border: 1px solid var(--graphite); padding: 8px 10px; white-space: pre; }
+.kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; }
+.kv dt { color: var(--bone-dim); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.inline-form { display: flex; gap: 8px; }
+.inline-form input { flex: 1; }
+.note { border-left: 3px solid var(--cyan); padding: 8px 12px; background: rgba(19,226,245,.06); margin: 12px 0; }
+.note.warn { border-color: var(--red); background: rgba(255,46,76,.07); }
+
+/* ---------------------------------------------------------------- core */
+.core-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.core { border: 1px solid var(--graphite); background: var(--surface); padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+.core.missing { border-color: var(--red); background: repeating-linear-gradient(135deg, transparent 0 9px, rgba(255,46,76,.07) 9px 10px); }
+.core h3 { margin: 0; font-size: 17px; font-weight: 600; }
+.core .state { font-size: 12px; align-self: start; padding: 2px 8px; background: var(--bone); color: var(--black); }
+.core.missing .state { background: var(--red); }
+.core.disabledc .state { background: var(--graphite); color: var(--bone); }
+.core p { grid-column: 1 / -1; margin: 2px 0 8px; color: var(--bone-dim); font-size: 13px; }
+.core .ver { font-family: var(--font-cond); font-size: 22px; }
+.core .ver small { font-family: var(--font); font-size: 12px; color: var(--bone-dim); margin-left: 6px; }
+.core .acts { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------- logs */
+.logs { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; height: 100%; }
+.loglist { display: flex; flex-direction: column; gap: 2px; }
+.loglist button { text-align: left; background: none; border: 0; border-left: 3px solid transparent; padding: 9px 12px; cursor: pointer; }
+.loglist button:hover { background: var(--graphite-2); }
+.loglist button.on { border-left-color: var(--yellow); background: var(--graphite-2); }
+.loglist small { display: block; color: var(--bone-dim); font-size: 12px; }
+.loglist .e { color: var(--red); }
+.loglist .w { color: var(--yellow-deep); }
+.viewer { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--graphite); background: var(--surface); }
+.viewer .vt { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--graphite); flex-wrap: wrap; }
+.viewer pre { margin: 0; flex: 1; overflow: auto; font: 12.5px/1.55 var(--mono); padding: 10px 0; counter-reset: ln; }
+.viewer pre div { padding: 0 14px 0 60px; position: relative; white-space: pre-wrap; word-break: break-all; }
+.viewer pre div::before { counter-increment: ln; content: counter(ln); position: absolute; left: 0; width: 46px; text-align: right; color: #55565c; }
+.viewer pre div.error { background: rgba(255,46,76,.12); color: #FFB3BF; }
+.viewer pre div.warning { background: rgba(252,238,10,.06); color: #F4EC9A; }
+.page.fill { display: flex; flex-direction: column; }
+.page.fill > .logs { flex: 1; min-height: 0; }
+
+/* ---------------------------------------------------------------- nexus */
+.user { display: flex; align-items: center; gap: 14px; }
+.user img { width: 56px; height: 56px; object-fit: cover; clip-path: polygon(0 0, 80% 0, 100% 20%, 100% 100%, 0 100%); }
+.user b { font-size: 20px; display: block; }
+.pill { font-size: 12px; padding: 2px 8px; border: 1px solid var(--yellow); color: var(--yellow); }
+.updates { list-style: none; margin: 0; padding: 0; }
+.updates li { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 10px 0; border-top: 1px solid var(--graphite); }
+.updates img { width: 64px; height: 40px; object-fit: cover; background: var(--graphite-2); }
+.updates .v { color: var(--bone-dim); font-size: 13px; }
+.updates .v b { color: var(--yellow); font-weight: 400; }
+
+/* ---------------------------------------------------------------- settings */
+.field { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 10px 20px; align-items: center; padding: 12px 0; border-top: 1px solid var(--graphite); }
+.field:first-of-type { border-top: 0; }
+.field > label { color: var(--bone-dim); }
+.field .path { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.field select { max-width: 520px; }
+.field .stack { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+
+/* ---------------------------------------------------------------- status bar, toasts, modal */
+.status { grid-column: 1 / -1; display: flex; gap: 22px; align-items: center; padding: 6px 18px; font-size: 12px; color: var(--bone-dim); border-top: 1px solid var(--graphite); }
+.status .grow { flex: 1; }
+.status .live { color: var(--cyan); }
+.status .live::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--cyan); margin-right: 6px; animation: blink 1.2s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+
+.toasts { position: fixed; right: 20px; bottom: 44px; display: flex; flex-direction: column; gap: 8px; z-index: 40; width: min(420px, 90vw); }
+.toast { background: var(--bone); color: var(--black); padding: 11px 14px 11px 16px; border-left: 6px solid var(--cyan);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%); }
+.toast.bad { border-left-color: var(--red); }
+.toast.ok { border-left-color: var(--black); background: var(--yellow); }
+.toast ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.toast .prog { height: 4px; background: rgba(0,0,0,.15); margin-top: 8px; }
+.toast .prog i { display: block; height: 100%; background: var(--black); width: 0; transition: width .15s; }
+.toast .tmsg { font-size: 12px; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast .btn { --edge: var(--black); margin-top: 8px; }
+
+.modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: grid; place-items: center; z-index: 30; }
+.modal { --edge: var(--yellow); width: min(520px, 92vw); background: linear-gradient(to top right, transparent calc(50% - 1px), var(--edge) calc(50% - 1px) calc(50% + .5px), transparent calc(50% + .5px)) top right / 22px 22px no-repeat, var(--black); border: 1px solid var(--edge); padding: 22px 24px;
+  clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%); }
+.modal h3 { margin: 0 0 10px; font-family: var(--font-cond); font-size: 28px; }
+.modal .btn-row { justify-content: flex-end; margin-top: 18px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* overview: updates first */
+.upd-panel { margin-bottom: 18px; border-color: var(--yellow); }
+.upd-panel h2 .hint .link { margin-left: 8px; }
+.upd-rows { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 0 18px; align-items: center; }
+.upd-rows > * { align-self: stretch; display: flex; align-items: center; min-height: 46px; border-top: 1px solid var(--graphite); }
+.upd-rows .n { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upd-rows .n .src { margin-left: 8px; }
+.upd-rows .vv { color: var(--bone-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.upd-rows .vv b { color: var(--yellow); font-weight: 400; }
+.upd-rows .d { color: var(--bone-dim); font-size: 13px; white-space: nowrap; }
+.upd-strip { display: flex; align-items: center; gap: 14px; }
+.upd-strip p { margin: 0; flex: 1; color: var(--bone-dim); }
+.upd-prog { height: 3px; background: var(--graphite); margin-top: 10px; }
+.upd-prog i { display: block; height: 100%; width: 0; background: var(--yellow); transition: width .2s; }
+.src.fw { color: var(--black); background: var(--bone); }
+.table tbody { background: var(--surface); }
+.upd-foot { margin: 12px 0 0; }
+.upd-rows sup { color: var(--cyan); margin-left: 2px; }
+.upd-rows.sug select { min-width: 280px; max-width: 100%; }
+
+/* link search (drawer + queue) */
+.lsearch { position: relative; }
+.lsearch input { width: 100%; }
+.lslabel { display: flex; align-items: center; gap: 8px; padding: 0 0 0 10px; background: var(--graphite-2); border: 1px solid var(--graphite); }
+.lslabel:focus-within { border-color: var(--yellow); }
+.lslabel svg { width: 16px; height: 16px; flex: none; color: var(--bone-dim); }
+.lslabel input { border: 0; background: none; flex: 1; padding-left: 0; }
+.lres-head { margin: 8px 0 4px; }
+.lresults { border: 1px solid var(--graphite); max-height: 300px; overflow: auto; }
+.lrow { display: flex; gap: 10px; align-items: center; padding: 6px 8px 6px 10px; border-top: 1px solid var(--graphite); cursor: pointer; }
+.lrow:first-child { border-top: 0; }
+.lrow:hover, .lrow:focus-visible { background: var(--graphite-2); }
+.lrow.on { background: rgba(19,226,245,.08); box-shadow: inset 3px 0 0 var(--cyan); }
+.lrow .lname { flex: 1; min-width: 0; }
+.lrow small { color: var(--bone-dim); white-space: nowrap; }
+.lrow .btn { flex: none; }
+.lpreview { display: grid; grid-template-columns: 96px 1fr; gap: 12px; margin-top: 10px; padding: 10px; border: 1px solid var(--cyan); }
+.lpreview img { width: 96px; height: 60px; object-fit: cover; background: var(--graphite-2); }
+.lpreview p { margin: 4px 0 8px; color: var(--bone-dim); font-size: 13px; }
+.trk { font-size: 12px; color: var(--cyan); margin-left: 6px; }
+.queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; padding: 10px 0; border-top: 1px solid var(--graphite); }
+.queue-row .tags { grid-column: 1; }
+.queue-row .lsearch { grid-column: 1 / -1; }
+
+.status #appVersion { color: var(--bone-dim); }
+.src.github { color: var(--black); background: var(--bone); }
+
+/* side panel: Nexus hero + link boxes */
+.hero { margin: 0 0 16px; border: 1px solid var(--graphite); background: var(--surface); }
+.hero img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: var(--graphite-2); }
+.hero img.adult { filter: blur(18px); }
+.hero-body { padding: 12px 14px 14px; }
+.hero-body b { display: block; font-size: 17px; margin-bottom: 2px; }
+.hero-body p { margin: 8px 0 0; color: var(--bone); font-size: 13.5px; }
+.small { font-size: 12.5px; }
+.linkbox { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 12px; margin-bottom: 10px;
+  border: 1px solid var(--graphite); border-left: 3px solid var(--cyan); background: var(--surface); }
+.linkbox .btn-row { flex-wrap: nowrap; }
+details > summary { cursor: pointer; margin: 10px 0 6px; }
+.link.plain { color: inherit; text-decoration: none; font: inherit; }
+.link.plain:hover { color: var(--yellow); text-decoration: underline; }
+
+/* browse */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.card { --edge: var(--graphite); position: relative; display: flex; flex-direction: column; text-align: left; padding: 0; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--edge); clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
+.card:hover, .card:focus-visible { --edge: var(--yellow); }
+/* corner line drawn above the picture, which would otherwise cover it */
+.card::after { content: ""; position: absolute; top: 0; right: 0; width: 14px; height: 14px; z-index: 2; pointer-events: none;
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--edge) calc(50% - 1px) calc(50% + .5px), transparent calc(50% + .5px)); }
+.card .thumb { position: relative; display: block; aspect-ratio: 16 / 9; background: var(--graphite-2); overflow: hidden; }
+.card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .thumb img.adult { filter: blur(18px); }
+.card .badge { position: absolute; left: 8px; top: 8px; background: var(--cyan); color: var(--black); font-size: 12px; padding: 2px 7px; }
+.card .cbody { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px 12px; min-height: 0; }
+.card b { font-size: 15px; line-height: 1.25; }
+.card .sum { color: var(--bone-dim); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-top: 2px; }
+.card .meta { color: var(--yellow-deep); margin-top: 4px; }
+.flist .frow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--graphite); }
+.flist .fdesc { margin-top: 3px; }
+.more-row { display: flex; align-items: center; gap: 14px; justify-content: center; margin: 18px 0 4px; }
+
+/* footer: live log error notice */
+#sbRun { display: flex; gap: 22px; align-items: center; }
+.sb-alert { background: none; border: 0; padding: 0; cursor: pointer; color: var(--red); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.sb-alert:hover { color: #FF7A8F; }
+
+/* startup screen: shown until the logo, avatar and mod list are ready */
+#splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background:
+  repeating-linear-gradient(-55deg, rgba(255,255,255,.022) 0 70px, transparent 70px 170px), var(--black); transition: opacity .25s; }
+#splash.done { opacity: 0; pointer-events: none; }
+.splash-card { width: min(460px, 82vw); padding: 30px 34px 22px; background: var(--slab); color: #fff;
+  clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 26px 100%, 0 calc(100% - 26px)); }
+.splash-logo { width: 100%; }
+.splash-logo .mark { max-height: none; }
+.splash-logo .tool { font-size: 22px; }
+.splash-logo.text-only .tool { font-size: 34px; text-align: center; letter-spacing: .14em; }
+.splash-title { font-family: var(--font-cond); font-weight: 700; font-size: 34px; text-transform: uppercase; letter-spacing: .14em; }
+.splash-bar { height: 6px; margin: 16px 0 10px; background: rgba(255,255,255,.14); overflow: hidden; }
+.splash-bar i { display: block; height: 100%; width: 35%; background: #fff; animation: splash 1.1s ease-in-out infinite; }
+@keyframes splash { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+.splash-msg { font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .splash-bar i { animation: none; width: 100%; } }
+
+/* conflict choice + mod backups */
+.choice-list { display: grid; gap: 8px; margin: 6px 0 4px; }
+.choice { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--graphite); cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--yellow); background: rgba(252,238,10,.05); }
+.choice input { margin-top: 3px; accent-color: var(--yellow); }
+.choice em { display: block; font-style: normal; color: var(--bone-dim); font-size: 12.5px; margin-top: 2px; }
+.modal.wide-bk { width: min(760px, 94vw); }
+.bk-sched { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bk-sched select { width: auto; }
+.bk-help { flex-basis: 100%; }
+.modal.wide-bk .field { grid-template-columns: 150px minmax(0, 1fr); }
+.bk-folder { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bk-folder code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-list { max-height: 260px; overflow: auto; margin: 6px 0 4px; }
+.bk-list td { vertical-align: middle; }
+.sub-h { margin: 22px 0 6px; padding-top: 16px; border-top: 1px solid var(--graphite); font-size: 15px; font-weight: 600; }
+#setBackups .bk-list { max-height: 320px; }
+
+/* demo-only additions */
+.demo-banner { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 12px;
+  padding: 5px 8px 5px 14px; background: var(--cyan); color: var(--black); font-size: 12.5px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 10px 100%); }
+.demo-banner .btn { --edge: var(--black); color: var(--black); padding: 2px 10px; }
+.demo-banner span { opacity: .8; }
+.tour { position: fixed; left: 250px; bottom: 44px; z-index: 70; width: min(440px, calc(100vw - 280px)); padding: 16px 18px 14px;
+  background: var(--black); border: 1px solid var(--yellow); box-shadow: 0 0 0 1px #000, 0 18px 40px rgba(0,0,0,.6);
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%); display: none; }
+.tour.on { display: block; }
+.tour h3 { margin: 2px 0 6px; font-family: var(--font-cond); font-size: 24px; color: var(--yellow); }
+.tour p { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
+.tour-step { font-size: 12px; color: var(--bone-dim); }
+.tour-hl { outline: 2px solid var(--cyan) !important; outline-offset: 3px; animation: tourpulse 1.4s ease-in-out infinite; position: relative; z-index: 5; }
+@keyframes tourpulse { 50% { outline-color: rgba(19,226,245,.25); } }
+@media (prefers-reduced-motion: reduce) { .tour-hl { animation: none; } }
+.modal.wide { width: min(940px, calc(100vw - 520px)); margin-left: 470px; }
+.modal-back:has(.modal.wide) { align-items: start; justify-items: start; padding: 50px 30px 0 0; }
+.demo-report { max-height: calc(100vh - 290px); overflow: auto; font: 12px/1.5 var(--mono); background: var(--surface); border: 1px solid var(--graphite); padding: 10px 12px; white-space: pre; }
+.demo-report mark { background: rgba(255,46,76,.22); color: #FFC2CC; }
+
+</style>
+</head>
+<body>
+<div id="splash" role="status" aria-live="polite">
+  <div class="splash-card">
+    <div class="slab-logo splash-logo text-only" id="splashLogo"><i class="mark"></i><span class="tool">Mod List Tool</span></div>
+    <div class="splash-bar"><i></i></div>
+    <div class="splash-msg" id="splashMsg">Starting up…</div>
+  </div>
+</div>
+<div class="app">
+  <nav class="rail" aria-label="Main">
+    <button class="user-chip" id="userChip" title="Nexus Mods account"></button>
+    <button class="nav" data-page="overview"><span>Overview</span></button>
+    <button class="nav" data-page="mods"><span>Mods</span><em id="navModCount"></em></button>
+    <button class="nav" data-page="core"><span>Core Frameworks</span><em id="navCoreFlag"></em></button>
+    <button class="nav" data-page="logs"><span>Logs</span><em id="navLogFlag"></em></button>
+    <button class="nav" data-page="nexus"><span>Nexus Mods</span><em id="navNexusFlag"></em></button>
+    <button class="nav" data-page="browse"><span>Browse Nexus</span></button>
+    <button class="nav" data-page="settings"><span>Settings</span></button>
+    <div class="rail-spacer" aria-hidden="true">
+      <!-- Circuit traces drawn with the UI's own vocabulary: graphite hairlines, diamond nodes,
+           the panel-heading slash marker, and one yellow trace that feeds the launch button. -->
+      <svg class="circuit" viewBox="0 0 228 300" width="228" height="300">
+        <g fill="none" stroke-width="1">
+          <path d="M182 0 V118 L160 140 V300" stroke="#3A3B40"/>
+          <path d="M200 0 V126 L178 148 V214 L196 232 V300" stroke="#3A3B40"/>
+          <path d="M44 0 V44 L64 64 V150 L44 170 V236" stroke="#2E2F34"/>
+          <path d="M28 0 V188 L44 204 V300" stroke="#2E2F34"/>
+          <path d="M12 96 H52" stroke="#FF2E4C" opacity=".55"/>
+          <path d="M216 262 V300" stroke="#FF2E4C" opacity=".55"/>
+        </g>
+        <!-- the live trace: ends where the launch button's frame begins -->
+        <path d="M170 0 V110 L144 136 V300" fill="none" stroke="#FCEE0A" stroke-width="3" class="live-trace"/>
+        <!-- diamond nodes (same shape as alert markers) -->
+        <g fill="#18181B" stroke="#9A998F" stroke-width="1">
+          <path d="M64 100 l5 5 -5 5 -5 -5z"/>
+          <path d="M160 176 l5 5 -5 5 -5 -5z"/>
+          <path d="M44 236 l5 5 -5 5 -5 -5z"/>
+        </g>
+        <path d="M144 214 l5 5 -5 5 -5 -5z" fill="#FCEE0A"/>
+        <!-- chamfered chip outlines -->
+        <g fill="#0E0E10" stroke="#2E2F34" stroke-width="1">
+          <path d="M80 160 H118 L126 168 V206 H80 Z"/>
+          <path d="M84 222 H114 V254 L106 262 H84 Z"/>
+        </g>
+        <g fill="#3A3B40"><rect x="88" y="170" width="16" height="2"/><rect x="88" y="176" width="26" height="2"/><rect x="88" y="182" width="10" height="2"/></g>
+        <!-- slash marker, as used on panel headings -->
+        <g transform="translate(90 236) skewX(-20)"><rect width="3" height="10" fill="#FCEE0A"/><rect x="6" width="3" height="10" fill="#FCEE0A"/><rect x="12" width="3" height="10" fill="#FCEE0A"/></g>
+        <g fill="#9A998F"><rect x="186" y="186" width="12" height="1.5"/><rect x="186" y="191" width="7" height="1.5"/></g>
+      </svg>
+    </div>
+    <button class="launch" id="launchBtn" title="Launch Cyberpunk 2077">
+      <span class="gicon"><img id="gameIcon" alt="" hidden>
+        <svg id="gameIconFallback" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11" fill="currentColor"/><path d="M16 15l9 5-9 5z" fill="#000"/></svg></span>
+      <span class="ltxt"><b id="launchLabel">Launch Game</b><small id="launchSub"></small></span>
+    </button>
+  </nav>
+
+  <main class="main">
+    <header class="slab">
+      <div class="slab-brand">
+        <div class="slab-logo" id="slabLogo" role="img" aria-label="Cyberpunk 2077 Mod List Tool">
+          <i class="mark" id="logoMark"></i><span class="tool">Mod List Tool</span>
+        </div>
+        <div class="slab-title">
+          <h1 id="pageTitle">Overview</h1>
+          <p id="pageSub"></p>
+        </div>
+      </div>
+      <div class="slab-meta" id="slabMeta"></div>
+      <div class="slab-stripe" aria-hidden="true"></div>
+    </header>
+    <section class="page" id="page"></section>
+  </main>
+
+  <footer class="status" id="statusBar">
+    <span id="appVersion">v3</span>
+    <span id="sbGame">No game folder</span>
+    <span id="sbManager"></span>
+    <span id="sbRun"></span>
+    <span class="grow"></span>
+    <a href="#" id="sbNexusPage">Nexus Mod Page</a>
+  </footer>
+</div>
+
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<div class="modal-back" id="modal" hidden></div>
+
+<script>
+/* Demo backend: stands in for the Python API (window.pywebview.api) with sample data.
+   Everything here is fictional: mod names, authors, IDs and versions are made up for the demo. */
+"use strict";
+(() => {
+  const now = Math.floor(Date.now() / 1000), day = 86400;
+  const pic = (title, hue) => "data:image/svg+xml;utf8," + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+     <stop offset="0" stop-color="hsl(${hue},70%,22%)"/><stop offset="1" stop-color="hsl(${(hue + 60) % 360},80%,8%)"/></linearGradient></defs>
+     <rect width="320" height="180" fill="url(#g)"/>
+     <g stroke="hsl(${hue},90%,60%)" stroke-width="2" fill="none" opacity=".5"><path d="M0 140 H90 L120 110 H210 L240 140 H320"/><path d="M40 0 V60 L70 90"/></g>
+     <rect x="18" y="18" width="6" height="40" fill="#FCEE0A"/>
+     <text x="34" y="44" font-family="Arial Narrow, Arial" font-weight="700" font-size="22" fill="#fff">${title.replace(/&/g, "&amp;")}</text></svg>`);
+
+  const C = (location, name, paths, is_dir = true, disabled = false) => ({ location, name, is_dir, disabled, paths });
+  const mods = [
+    { key: "loose:neonnightsweather", name: "NeonNightsWeather", nexus_id: 90011, version: "3.2.0", enabled: true,
+      components: [C("archive", "NeonNightsWeather", ["archive/pc/mod/NeonNightsWeather.archive", "archive/pc/mod/NeonNightsWeather.archive.xl"], false), C("tweak", "NeonNightsWeather", ["r6/tweaks/NeonNightsWeather"])],
+      size: 412e6, link: { mod_id: 90011, name: "Neon Nights Weather Overhaul", method: "in_files" }, tracked: true },
+    { key: "loose:minimalhud", name: "MinimalHUD", nexus_id: 90022, version: "1.4.1", enabled: true,
+      components: [C("redscript", "MinimalHUD", ["r6/scripts/MinimalHUD/HUDCore.reds", "r6/scripts/MinimalHUD/HUDConfig.reds"], false), C("archive", "MinimalHUD", ["archive/pc/mod/MinimalHUD.archive"], false)],
+      size: 3.1e6, link: { mod_id: 90022, name: "Minimal HUD", method: "download", archive: "Minimal HUD-90022-1-4-1-1760000000.zip" }, tracked: true,
+      update: { mod_id: 90022, latest: "1.5.0", installed: "1.4.1", basis: "exact", update: true, updated: now - 2 * day, nexus_name: "Minimal HUD" },
+      files: ["r6/scripts/MinimalHUD/HUDCore.reds", "r6/scripts/MinimalHUD/HUDConfig.reds", "archive/pc/mod/MinimalHUD.archive"] },
+    { key: "loose:ripperdocexpanded", name: "RipperdocExpanded", nexus_id: 90033, enabled: true,
+      components: [C("archive", "RipperdocExpanded", ["archive/pc/mod/RipperdocExpanded.archive", "archive/pc/mod/RipperdocExpanded.xl"], false), C("redscript", "RipperdocExpanded", ["r6/scripts/RipperdocExpanded"]), C("tweak", "RipperdocExpanded", ["r6/tweaks/RipperdocExpanded.yaml"], false)],
+      size: 58e6, link: { mod_id: 90033, name: "Ripperdoc Expanded", method: "verified", version: "2.0.3" }, tracked: true,
+      update: { mod_id: 90033, latest: "2.1.0", installed: "2.0.3", basis: "estimated", update: true, updated: now - 5 * day, nexus_name: "Ripperdoc Expanded" } },
+    { key: "loose:afterlifeboothsunlocked", name: "AfterlifeBoothsUnlocked", nexus_id: 90044, version: "1.0.2", enabled: true,
+      components: [C("archive", "AfterlifeBoothsUnlocked", ["archive/pc/mod/AfterlifeBoothsUnlocked.archive", "archive/pc/mod/AfterlifeBoothsUnlocked.archive.xl"], false)],
+      size: 9.4e6, link: { mod_id: 90044, name: "Afterlife Booths Unlocked", method: "name" }, tracked: false },
+    { key: "loose:photomodeextras", name: "PhotoModeExtras", nexus_id: 90055, version: "4.0.0", enabled: true,
+      components: [C("cet", "PhotoModeExtras", ["bin/x64/plugins/cyber_engine_tweaks/mods/PhotoModeExtras"]), C("archive", "PhotoModeExtras", ["archive/pc/mod/PhotoModeExtras.archive"], false)],
+      size: 22e6, link: { mod_id: 90055, name: "Photo Mode Extras", method: "in_files" }, tracked: true },
+    { key: "loose:nightcitytraffic", name: "NightCityTrafficPlus", nexus_id: 90066, enabled: true,
+      components: [C("tweak", "NightCityTrafficPlus", ["r6/tweaks/NightCityTrafficPlus"]), C("redscript", "NightCityTrafficPlus", ["r6/scripts/NightCityTrafficPlus"])],
+      size: 1.2e6, link: { mod_id: 90066, name: "Night City Traffic+", method: "verified", version: "1.9" }, tracked: true },
+    { key: "loose:hotreloadtools", name: "HotReloadTools", enabled: true, version: "1.3.0",
+      components: [C("red4ext", "HotReloadTools", ["red4ext/plugins/HotReloadTools"])], size: 2.4e6,
+      github: { repo: "example/cp2077-hot-reload-tools", method: "in_files" } },
+    { key: "loose:betterscopes", name: "BetterScopes", enabled: true,
+      components: [C("archive", "BetterScopes", ["archive/pc/mod/#BetterScopes.archive", "archive/pc/mod/#BetterScopes.archive.xl"], false)], size: 31e6 },
+    { key: "loose:cozyapartmentlights", name: "cozyapartmentlights", enabled: true,
+      components: [C("archive", "cozyapartmentlights", ["archive/pc/mod/cozyapartmentlights.archive"], false)], size: 4.8e6 },
+    { key: "loose:oldradiopack", name: "OldRadioPack", enabled: false,
+      components: [C("redmod", "OldRadioPack", ["mods/OldRadioPack"], true, true)], size: 120e6 },
+    { key: "vortex:streetvendors", name: "Street Vendors Reborn", source: "vortex", nexus_id: 90077, version: "2.2.0", enabled: true, manager_ref: "Street Vendors Reborn-90077-2-2-0-1760000000",
+      components: [C("archive", "StreetVendors", ["archive/pc/mod/StreetVendors.archive"], false), C("cet", "StreetVendors", ["bin/x64/plugins/cyber_engine_tweaks/mods/StreetVendors"])], size: 64e6, tracked: true },
+  ];
+  for (const m of mods) {
+    m.source = m.source || "loose"; m.partial = false; m.github = m.github || null; m.link = m.link || null; m.update = m.update || null;
+    m.tracked = m.tracked ?? null; m.locations = [...new Set(m.components.map((c) => c.location))].sort();
+    m.files = m.files || m.components.flatMap((c) => c.paths); m.file_count = m.files.length;
+  }
+  const byKey = (k) => mods.find((m) => m.key === k);
+
+  const core = [
+    ["RED4ext", 2380, "1.27.0", "Native plugin loader required by ArchiveXL, TweakXL and Codeware."],
+    ["Redscript", 1511, "0.5.28", "Script compiler for .reds mods."],
+    ["Cyber Engine Tweaks", 107, "1.35.1", "Lua scripting framework and in-game overlay."],
+    ["ArchiveXL", 4198, "1.24.3", "Loads custom resources, appearances and world edits."],
+    ["TweakXL", 4197, "1.10.8", "Loads TweakDB edits from r6/tweaks."],
+    ["Codeware", 7780, "1.17.0", "Redscript library many UI and gameplay mods depend on."],
+    ["EquipmentEx", 6945, "1.2.9", "Outfit system used by many clothing mods."],
+  ].map(([name, nexus_id, version, desc]) => ({ name, nexus_id, version, desc, installed: true, disabled: false, version_source: "file", update: null }));
+
+  const LOG_OK = {
+    "RED4ext": ["[info] RED4ext (v1.27.0) is initializing...", "[info] Loading plugins...", "[info] ArchiveXL loaded", "[info] TweakXL loaded", "[info] Codeware loaded", "[info] HotReloadTools loaded", "[info] 4 plugins loaded"],
+    "ArchiveXL": ["[info] ArchiveXL 1.24.3 is initializing...", "[info] Scanning archives...", "[info] NeonNightsWeather.archive.xl: 12 resources registered", "[info] AfterlifeBoothsUnlocked.archive.xl: 3 world edits applied"],
+    "Cyber Engine Tweaks": ["[info] CET version v1.35.1", "[info] Loaded mod PhotoModeExtras", "[info] Loaded mod StreetVendors"],
+  };
+  const REDSCRIPT_OK = ["INFO - redscript compiler v0.5.28", "INFO - Using defaults for the script manifest", "INFO - Compiling 214 files", "INFO - Output successfully saved"];
+  const REDSCRIPT_ERR = ["INFO - redscript compiler v0.5.28", "INFO - Using defaults for the script manifest", "INFO - Compiling 214 files",
+    "ERROR - At r6/scripts/MinimalHUD/HUDCore.reds:42:12:",
+    "ERROR -     let health = player.GetPlayerHealth();",
+    "ERROR - Function 'GetPlayerHealth' not found on 'PlayerPuppet' (the game's update renamed it)",
+    "WARN - r6/scripts/NightCityTrafficPlus/Spawner.reds:88:4: unused variable 'density'",
+    "ERROR - Compilation failed. Scripts were not updated."];
+
+  const D = window.DEMO = {
+    running: false, launching: false, broken: false, nexus: true, updatesChecked: now - 300, tasks: {}, seq: 0,
+    settings: { auto_open_output: false, auto_select_all_logs: true, include_errors_in_output: true, include_disabled_in_output: false,
+      include_grouped_in_output: true, ask_report_path: false, queue_include_disabled: false, output_dir: "", output_dir_effective: "C:\\Users\\You\\Documents",
+      manager_mode: "auto", launch_via: "auto", auto_track: true, mo2_instance: "", mo2_profile: "", mo2_executable: "", game_dir: "D:\\Games\\Cyberpunk 2077" },
+    reportPath: "C:\\Users\\You\\Documents\\Cyberpunk 2077 Mod List.txt",
+    breakGame() { D.broken = true; D.running = true; },
+    note(msg) { window.cp && window.cpDemoToast ? window.cpDemoToast(msg) : null; },
+  };
+  const ok = (x = {}) => Promise.resolve({ ok: true, ...x });
+  const later = (v, ms = 120) => new Promise((r) => setTimeout(() => r(v), ms));
+
+  function logs() {
+    const out = Object.entries(LOG_OK).map(([name, lines]) => ({ name, lines }));
+    out.push({ name: "Redscript", lines: D.broken ? REDSCRIPT_ERR : REDSCRIPT_OK });
+    return out.map((l) => {
+      const k = l.lines.map((t) => (/^ERROR\b|\[error\]/i.test(t) ? "error" : /^WARN\b|\[warn/i.test(t) ? "warning" : null));
+      return { ...l, kinds: k, errors: k.filter((x) => x === "error").length, warnings: k.filter((x) => x === "warning").length };
+    });
+  }
+  function summary() {
+    return { total: mods.length, enabled: mods.filter((m) => m.enabled).length, disabled: mods.filter((m) => !m.enabled).length,
+      loose: mods.filter((m) => m.source === "loose").length, vortex: mods.filter((m) => m.source === "vortex").length, mo2: 0,
+      updates: mods.filter((m) => m.enabled && m.update?.update).length };
+  }
+  D.backups = [
+    { path: "demo-1", name: "a", created: now - 2 * day - 3600 * 5, size: 398e6, kind: "scheduled", mods: 9, files: 209 },
+    { path: "demo-2", name: "b", created: now - 9 * day - 3600 * 2, size: 371e6, kind: "manual", mods: 8, files: 188 },
+  ];
+  function startTask(name, ms, result, steps) {
+    const id = "t" + (++D.seq);
+    D.tasks[id] = { id, name, t0: Date.now(), ms, result, steps: steps || [] };
+    return { ok: true, task: id, name };
+  }
+  function reportText() {
+    const L = logs(), red = L.find((l) => l.name === "Redscript");
+    const errs = red.lines.filter((_, i) => red.kinds[i] === "error");
+    const rule = "-".repeat(100);
+    return [
+      "Cyberpunk 2077 Mod List Tool v3.0.0 by Sammmy1036",
+      "Nexus Mod Page https://www.nexusmods.com/cyberpunk2077/mods/20113",
+      `List created on ${new Date().toLocaleString()}`,
+      "Game Version: 2.3.1.0 | Store: Steam | Phantom Liberty DLC Installed: Yes",
+      "All Core Mods Installed: Yes",
+      `Total Mods Installed: ${summary().enabled} enabled, ${summary().disabled} disabled`, rule, "",
+      "Core Frameworks", rule, ...core.map((c) => `${c.name.padEnd(22)} Installed  ${c.version}`), rule,
+      ...(errs.length ? ["", "Potential Errors to Review", "=".repeat(100), "", `Redscript (${errs.length}):`, rule, ...errs, "=".repeat(100)] : []),
+      "", `Installed Mods (${summary().enabled})`, rule,
+      ...mods.filter((m) => m.enabled).map((m) => [m.name, m.version ? "v" + m.version : "", `[${{ loose: "Manual", vortex: "Vortex" }[m.source]}]`,
+        `(${m.locations.join(", ")})`, m.nexus_id ? `https://www.nexusmods.com/cyberpunk2077/mods/${m.nexus_id}` : ""].filter(Boolean).join("  ")),
+      rule, "", "Redscript Log:", rule, ...red.lines, rule,
+    ].join("\n");
+  }
+
+  const nexusPool = [
+    [90101, "Corpo Plaza Night Lights", "Warmer lighting around the plaza at night."], [90102, "Pacifica Boardwalk Revival", "Adds vendors and life to the boardwalk."],
+    [90103, "Better Car Radio UI", "Cleaner radio station list with logos."], [90104, "Vehicle Paint Studio", "Repaint any car in a garage menu."],
+    [90105, "Rainy Night City LUT", "Moody, filmic colour grading for rain."], [90106, "Quick Hack Hotkeys", "Bind your favourite quickhacks to keys."],
+    [90107, "Apartment Decor Pack", "Furniture and props for V's apartments."], [90108, "Netrunner Suits Collection", "Twelve new netrunner outfits."],
+    [90109, "Smarter Police AI", "Police respond more believably."], [90110, "Megabuilding Elevator Music", "Replaces elevator music with new tracks."],
+    [90111, "Street Food Overhaul", "Every food stall gets a real menu."], [90112, "Dynamic Crowds", "Crowd density that follows time of day."],
+    [90113, "Rockerboy Guitar Sounds", "New guitar audio set."], [90114, "Badlands Wind Storms", "Rare dust storms in the Badlands."],
+    [90115, "Better Map Markers", "Clearer icons on the world map."], [90116, "Cyberdeck Rebalance", "Rebalanced RAM and cooldowns."],
+    [90117, "Neon Signs Restored", "Brings back broken neon signs."], [90118, "Kabuki Market Stalls", "More stalls and NPC vendors."],
+    [90119, "Ambulance Siren Pack", "New siren audio."], [90120, "Hidden Gems Map", "Marks hidden locations on the map."],
+    [90121, "Bike Lean Physics", "More natural motorcycle lean."], [90122, "Wardrobe Presets", "Save and load outfit presets."],
+    [90123, "Photo Mode Poses Pack", "120 new poses."], [90124, "Afterlife Music Rework", "New tracks for the Afterlife."],
+  ].map(([mod_id, name, summary_], i) => ({ mod_id, name, summary: summary_, author: ["chromecat", "nightshift", "glitchwerk", "mox_dev"][i % 4],
+    version: `${1 + (i % 3)}.${i % 7}`, endorsement_count: 9000 - i * 311, updated_timestamp: now - i * day * 2, picture_url: pic(name, (i * 37) % 360) }));
+  const own = mods.filter((m) => m.nexus_id).map((m, i) => ({ mod_id: m.nexus_id, name: m.link?.name || m.name, summary: "A sample mod used in this demo.",
+    author: "demo", version: m.version || "1.0", endorsement_count: 4200 - i * 300, updated_timestamp: now - (i + 3) * day, picture_url: pic(m.link?.name || m.name, (i * 53 + 180) % 360) }));
+  const allNexus = [...own, ...nexusPool];
+  const findNexus = (id) => allNexus.find((x) => x.mod_id === +id);
+
+  const api = {
+    bootstrap: () => ok({ app: { name: "Cyberpunk 2077 Mod List Tool", version: "3.0.0", nexus_page: "https://www.nexusmods.com/cyberpunk2077/mods/20113" },
+      settings: D.settings, game: { dir: D.settings.game_dir, valid: true, version: "2.3.1.0", store: "Steam", phantom_liberty: true },
+      managers: { mode: "auto", vortex: { detected: true, installed: true, files: 6, manifests: [] }, mo2: null, mo2_candidates: [], running: {} },
+      nexus: { user: D.nexus ? { name: "DemoRunner", is_premium: true, avatar: "" } : null, sso: false, api_key_page: "https://next.nexusmods.com/settings/api-keys" } }),
+    app_logo: () => ok({ ok: false }), game_icon: () => ok({ ok: false }),
+    get_running: () => ok({ game: D.running && !D.launching, launching: D.launching, mo2: false, vortex: false }),
+    get_status: () => {
+      const L = logs(), errs = L.filter((l) => l.errors);
+      return ok({ running: { game: D.running && !D.launching, launching: D.launching }, valid: true, nxm_tasks: { tasks: [], errors: [] },
+        changed: false, summary: summary(), log_errors: errs.reduce((a, l) => a + l.errors, 0), log_warnings: L.reduce((a, l) => a + l.warnings, 0),
+        logs_with_errors: errs.map((l) => l.name), log_errors_fresh: D.running, core_ok: true, core_missing: [],
+        backup: { last: D.backups[0]?.created || null, schedule: D.settings.backup_schedule || "off", running: false } });
+    },
+    get_mods: () => later({ ok: true, mods: JSON.parse(JSON.stringify(mods)), summary: summary() }, 60),
+    set_mods_enabled: (keys, enable) => {
+      if (D.running) return ok({ ok: false, error: "Close Cyberpunk 2077 first. Mod files can't be changed while the game is running." });
+      keys.forEach((k) => { const m = byKey(k); if (m && m.source === "loose") { m.enabled = enable; m.components.forEach((c) => (c.disabled = !enable)); } });
+      return ok({ moved: keys.length, errors: [], notes: keys.some((k) => byKey(k)?.source === "vortex") ? ["Vortex mods stay under Vortex's control."] : [] });
+    },
+    set_all_enabled: (enable) => api.set_mods_enabled(mods.filter((m) => m.source === "loose").map((m) => m.key), enable),
+    get_core: () => ok({ core: JSON.parse(JSON.stringify(core)) }),
+    get_logs: () => ok({ logs: logs().map((l) => ({ name: l.name, path: `D:\\Games\\Cyberpunk 2077\\logs\\${l.name}.log`, file: `${l.name.toLowerCase().replace(/ /g, "_")}.log`,
+      errors: l.errors, warnings: l.warnings, modified: now - (l.errors ? 30 : 600), size: 4096 })) }),
+    read_log: (name) => { const l = logs().find((x) => x.name === name); return ok({ name, path: "", lines: l.lines.map((t, i) => ({ t, k: l.kinds[i] })) }); },
+    generate_report: () => later({ ok: true, path: D.reportPath }, 400),
+    copy_report: () => ok({ text: reportText() }),
+    open_path: (p) => { if (String(p).toLowerCase().endsWith(".txt")) window.demoShowReport?.(reportText()); else D.note("In the app this opens the folder in File Explorer."); return ok(); },
+    open_mod_folder: () => { D.note("In the app this opens the mod's folder in File Explorer."); return ok(); },
+    open_game_folder: () => { D.note("In the app this opens the folder in File Explorer."); return ok(); },
+    open_url: (u) => { D.note("In the app this opens " + String(u).replace(/^https?:\/\//, "") + " in your browser."); return ok(); },
+    launch_game: () => {
+      if (D.running) return ok({ ok: false, error: "Cyberpunk 2077 is already running." });
+      D.launching = true; D.running = true;
+      setTimeout(() => { D.launching = false; }, 2500);
+      return ok({ via: "Cyberpunk 2077" });
+    },
+    get_task: (id) => {
+      const t = D.tasks[id]; if (!t) return ok({ ok: false, error: "Unknown task" });
+      const p = Math.min(1, (Date.now() - t.t0) / t.ms), done = p >= 1;
+      const msg = t.steps.length ? t.steps[Math.min(t.steps.length - 1, Math.floor(p * t.steps.length))] : "";
+      if (done && !t.applied) { t.applied = true; t.result = typeof t.result === "function" ? t.result() : t.result; }
+      return ok({ id, name: t.name, progress: p, message: msg, done, result: done ? t.result : null, error: null });
+    },
+    cancel_task: () => ok(),
+    get_updates: () => ok({ connected: D.nexus, premium: true, checked: D.updatesChecked,
+      updates: mods.filter((m) => m.enabled && m.update?.update).map((m) => ({ key: m.key, name: m.name, source: m.source, core: false, ...m.update })) }),
+    nexus_check_updates: (keys) => startTask("updates", 1600, () => { D.updatesChecked = Math.floor(Date.now() / 1000); return { checked: 9, updates: summary().updates }; },
+      ["1/9  Neon Nights Weather Overhaul", "4/9  Minimal HUD", "7/9  Night City Traffic+", "9/9  Street Vendors Reborn"]),
+    mark_up_to_date: (key) => { const m = byKey(key); if (m?.update) { m.update.update = false; m.version = m.update.latest; } return ok(); },
+    nexus_update: (key) => startTask("update", 1800, () => {
+      const m = byKey(key); m.version = m.update.latest; m.update.update = false; m.update.installed = m.update.latest;
+      if (key === "loose:minimalhud") D.broken = false;   // the update fixes the script error
+      return { name: m.link?.name || m.name, version: m.version, installed: m.files, displaced: [] };
+    }, ["Downloading 1.2 / 3.1 MB", "Downloading 3.1 / 3.1 MB", "Backing up replaced files", "Installing"]),
+    nexus_identify: () => startTask("identify", 2400, () => {
+      const b = byKey("loose:betterscopes"); b.nexus_id = 90088; b.link = { mod_id: 90088, name: "Better Scopes", method: "verified", version: "1.1" };
+      b.update = { mod_id: 90088, latest: "1.1", installed: "1.1", update: false };
+      D.suggest = true;
+      return { checked: 3, identified: 1, by_url: 0, by_download: 0, verified: 1, by_name: 0, by_github: 0, suggested: 1, unlinked: 0, logged_in: true };
+    }, ["Reading mod files 2/3: BetterScopes", "Reading downloads 14/20", "Checking Nexus 1/2: BetterScopes", "Checking Nexus 2/2: cozyapartmentlights"]),
+    get_suggestions: () => ok({ suggestions: D.suggest && !byKey("loose:cozyapartmentlights").nexus_id ? [{ key: "loose:cozyapartmentlights", local: "cozyapartmentlights", score: 0.82,
+      options: [{ mod_id: 90107, name: "Apartment Decor Pack" }, { mod_id: 90131, name: "Cozy Apartment Lighting" }] }] : [] }),
+    resolve_suggestion: (key, mod_id) => { D.suggest = false; if (mod_id) { const m = byKey(key); m.nexus_id = mod_id; m.link = { mod_id, name: mod_id === 90131 ? "Cozy Apartment Lighting" : findNexus(mod_id)?.name, method: "confirmed" }; } return ok(); },
+    nexus_search: (q) => {
+      const t = String(q).toLowerCase(), words = t.split(/\s+/).filter(Boolean);
+      const res = allNexus.filter((x) => words.some((w) => x.name.toLowerCase().includes(w))).slice(0, 12).map(({ mod_id, name, version }) => ({ mod_id, name, version }));
+      return later({ ok: true, results: res }, 250);
+    },
+    nexus_mod_info: (id) => { const m = findNexus(id) || { mod_id: id, name: "Cozy Apartment Lighting", author: "lumen", version: "1.2", summary: "Softer lamps in every apartment.", picture_url: pic("Cozy Apartment Lighting", 40) }; return ok({ mod: m }); },
+    nexus_link: (key, text) => { const id = +String(text).match(/(\d+)/)?.[1]; if (!id) return ok({ ok: false, error: "Paste a Nexus mod URL or ID." });
+      const m = byKey(key); m.nexus_id = id; m.link = { mod_id: id, name: findNexus(id)?.name || `Mod ${id}`, method: "manual" }; return ok({ link: m.link }); },
+    nexus_unlink: (key) => { const m = byKey(key); m.nexus_id = null; m.link = null; m.update = null; return ok(); },
+    nexus_track: (id, on) => { mods.filter((m) => m.nexus_id === +id).forEach((m) => (m.tracked = !!on)); return ok(); },
+    nexus_track_installed: () => startTask("track-all", 900, () => { let n = 0; mods.forEach((m) => { if (m.nexus_id && !m.tracked) { m.tracked = true; n++; } }); return { tracked: n }; }),
+    nexus_tracked: () => ok({ tracked: mods.filter((m) => m.tracked).map((m) => ({ mod_id: m.nexus_id, name: m.link?.name || m.name, installed: true, url: "" })),
+      not_tracked: mods.filter((m) => m.nexus_id && !m.tracked).map((m) => ({ key: m.key, name: m.name, mod_id: m.nexus_id })) }),
+    nexus_status: () => ok({ user: D.nexus ? { name: "DemoRunner", is_premium: true, avatar: "" } : null, has_key: D.nexus, rate: { daily: 19840, hourly: 497 } }),
+    nexus_logout: () => { D.nexus = false; return ok(); },
+    nexus_login_key: () => { D.nexus = true; return ok({ user: { name: "DemoRunner", is_premium: true, avatar: "" } }); },
+    mod_details: (key) => {
+      const m = byKey(key), n = m.nexus_id ? findNexus(m.nexus_id) : null;
+      return ok({ nexus: n ? { ...n, url: "" } : (m.nexus_id ? { mod_id: m.nexus_id, name: m.link?.name, summary: "", picture_url: pic(m.link?.name || m.name, 90) } : null),
+        github: m.github ? { repo: m.github.repo, description: "Hot reload for archives, scripts and tweaks", stars: 214, latest: "1.3.0", latest_date: now - 9 * day } : null });
+    },
+    github_link: (key, text) => { const m = byKey(key); const repo = (String(text).match(/github\.com\/([^/\s]+\/[^/\s?#]+)/) || [])[1]; if (!repo) return ok({ ok: false, error: "Paste a GitHub repository URL." }); m.github = { repo }; return ok({ repo }); },
+    github_unlink: (key) => { byKey(key).github = null; return ok(); },
+    nexus_browse: (kind, term, offset = 0, count = 12) => {
+      let list = kind === "search" ? allNexus.filter((x) => x.name.toLowerCase().includes(String(term).toLowerCase())) : kind === "trending" ? nexusPool.slice(0, 10) : nexusPool.slice().reverse();
+      const page = list.slice(offset, offset + count).map((x) => ({ ...x, installed_key: mods.find((m) => m.nexus_id === x.mod_id)?.key || null }));
+      return later({ ok: true, mods: page, more: kind !== "trending" && offset + count < list.length }, 300);
+    },
+    nexus_mod_page: (id) => { const m = findNexus(id); return ok({ mod: { ...m, url: "https://www.nexusmods.com/cyberpunk2077/mods/" + id }, premium: true, nxm: true,
+      installed_key: mods.find((x) => x.nexus_id === +id)?.key || null,
+      files: [{ file_id: id * 10, name: m.name, version: m.version, category: "MAIN", size_kb: 18200, uploaded: m.updated_timestamp, description: "Main file." },
+        { file_id: id * 10 + 1, name: m.name + " (Lite)", version: m.version, category: "OPTIONAL", size_kb: 6400, uploaded: m.updated_timestamp, description: "Smaller version without extras." }] }); },
+    nexus_install: (id) => startTask("update", 1500, () => ({ name: findNexus(id)?.name, version: findNexus(id)?.version, installed: [], displaced: [] }),
+      ["Downloading", "Installing"]),
+    nxm_status: () => ok({ registered: true, owner: "this tool", previous: "" }),
+    nxm_set: () => ok({ registered: true }),
+    save_settings: (v) => { Object.assign(D.settings, v); return ok({ settings: D.settings }); },
+    backups_info: () => ok({ size: 18.4e6, files: 6, sets: 2 }),
+    mod_backups_list: () => ok({ folder: "C:\\Users\\You\\Documents\\Cyberpunk 2077 Mod Backups", custom_folder: false,
+      backups: D.backups, schedule: D.settings.backup_schedule || "off", keep: D.settings.backup_keep || 5,
+      state: { last: D.backups[0]?.created || null, schedule: D.settings.backup_schedule || "off", running: false } }),
+    mod_backup_create: (kind) => startTask("backup", 1600, () => {
+      const t = Math.floor(Date.now() / 1000), b = { path: "demo-" + t, name: "demo", created: t, size: 412e6, kind: kind === "scheduled" ? "scheduled" : "manual", mods: 9, files: 214 };
+      D.backups.unshift(b); return { ...b, pruned: 0 };
+    }, ["Packing archive/pc/mod", "Packing r6/scripts", "Packing red4ext/plugins"]),
+    mod_backup_restore: () => D.running ? ok({ ok: false, error: "Close Cyberpunk 2077 first." }) : startTask("restore", 1500, () => ({ restored: 214, replaced: 3, overwrite: false }), ["Extracting", "Restoring"]),
+    mod_backup_delete: (path) => { D.backups = D.backups.filter((b) => b.path !== path); return ok({}); },
+    mod_backup_browse_dir: () => ok({ ok: false }),
+    mod_backup_reset_dir: () => api.mod_backups_list(),
+    open_mod_backups: () => ok({}),
+    get_download_folders: () => ok({ folders: ["C:\\Users\\You\\Downloads", "C:\\Users\\You\\AppData\\Roaming\\Vortex\\downloads\\cyberpunk2077"], extra: [] }),
+    detect_game_dirs: () => Promise.resolve([{ path: "D:\\Games\\Cyberpunk 2077", store: "Steam" }]),
+    export_formats: () => Promise.resolve(["zip", "7z"]),
+    export_preset: () => startTask("export", 1400, { mods: 10, files: 46, path: "C:\\Users\\You\\Desktop\\Cyberpunk2077_Mod_Preset.zip" }, ["Packing archive/pc/mod", "Packing r6/scripts"]),
+    install_archive: () => startTask("install", 1300, () => ({ installed: ["archive/pc/mod/NewMod.archive", "archive/pc/mod/NewMod.archive.xl"], displaced: [] }), ["Extracting", "Installing"]),
+  };
+  const fallback = () => (...args) => { D.note("That action needs the real app."); return ok(); };
+  window.pywebview = { api: new Proxy(api, { get: (t, k) => (k in t ? t[k] : fallback()) }) };
+})();
+
+</script>
+<script>
+/* Cyberpunk 2077 Mod List Tool — frontend. Talks to Python via window.pywebview.api. */
+"use strict";
+
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+/* Python bridge. pywebview fills window.pywebview.api in a background thread after each page
+   load, so a call can land while a function isn't there yet. Wait for it, and fall back to the
+   single rpc() dispatcher if it still isn't exposed. */
+const bridgeReady = () => new Promise((res) => {
+  if (window.pywebview?.api?.rpc) return res();
+  const t = setTimeout(res, 4000);
+  window.addEventListener("pywebviewready", () => { clearTimeout(t); res(); }, { once: true });
+});
+const call = async (name, ...args) => {
+  try {
+    let api = window.pywebview?.api;
+    if (!api || typeof api[name] !== "function") {
+      await bridgeReady();
+      for (let i = 0; i < 20 && typeof window.pywebview?.api?.[name] !== "function" && typeof window.pywebview?.api?.rpc !== "function"; i++)
+        await new Promise((r) => setTimeout(r, 100));
+      api = window.pywebview?.api;
+    }
+    if (api && typeof api[name] === "function") return await api[name](...args);
+    if (api && typeof api.rpc === "function") return await api.rpc(name, args);
+    return { ok: false, error: "The app's connection to Python isn't ready. Try again in a moment." };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+};
+const fmtSize = (b) => !b ? "" : b < 1e6 ? `${Math.max(1, Math.round(b / 1e3))} KB` : b < 1e9 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1e9).toFixed(2)} GB`;
+const fmtDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const LOC = { archive: "Archive", redmod: "REDmod", cet: "CET", redscript: "Redscript", tweak: "TweakXL", red4ext: "RED4ext", input: "Input", asi: "ASI" };
+const SRC = { loose: "Manual", vortex: "Vortex", mo2: "MO2", github: "GitHub" };
+
+const S = {
+  boot: null, page: "overview", status: {}, mods: [], summary: {}, sel: new Set(),
+  filter: { q: "", state: "all", source: "all", locs: new Set() }, sort: { key: "name", dir: 1 },
+  logSel: null, errorsOnly: false, drawerKey: null, lastReport: null, tasks: {},
+};
+
+/* ------------------------------------------------------------------ toasts & tasks */
+function toast(html, kind = "", ms = 5000) {
+  const t = document.createElement("div");
+  t.className = `toast ${kind}`;
+  t.innerHTML = html;
+  $("#toasts").append(t);
+  if (ms) setTimeout(() => t.remove(), ms);
+  return t;
+}
+function result(r, okMsg) {
+  if (!r) return false;
+  if (r.ok === false && r.error) { toast(esc(r.error), "bad", 8000); return false; }
+  const issues = [...(r.errors || [])];
+  if (issues.length) toast(`<b>Finished with problems</b><ul>${issues.slice(0, 6).map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`, "bad", 12000);
+  (r.notes || []).forEach((n) => toast(esc(n), "", 9000));
+  if (r.note) toast(esc(r.note), "", 9000);
+  if (okMsg && !issues.length && r.ok !== false) toast(esc(okMsg), "ok", 3500);
+  return r.ok !== false;
+}
+const TASK_LABEL = { export: "Exporting preset", install: "Installing archive", backup: "Backing up mods", restore: "Restoring backup", identify: "Identifying mods on Nexus",
+  updates: "Checking for updates", update: "Updating mod", "track-all": "Tracking mods on Nexus", "nexus-sso": "Logging in to Nexus" };
+const taskDone = {};
+const activeTasks = new Set(), finishedTasks = new Set();
+let taskPoller = null;
+const silentTasks = new Set();  // progress shown in-page instead of a toast
+function startTask(r, onDone, silent = false) {
+  if (silent && r && r.task) silentTasks.add(r.task);
+  if (!r || r.ok === false) { result(r); return; }
+  if (!r.task) return;
+  taskDone[r.task] = onDone;
+  activeTasks.add(r.task);
+  window.cp.onTask({ id: r.task, name: r.name || "", progress: 0, message: "", done: false });
+  if (!taskPoller) taskPoller = setInterval(pollTasks, 400);
+}
+async function pollTasks() {
+  for (const id of [...activeTasks]) {
+    const t = await call("get_task", id);
+    if (t && t.ok === false) { activeTasks.delete(id); continue; }
+    if (t) window.cp.onTask(t);
+  }
+  if (!activeTasks.size) { clearInterval(taskPoller); taskPoller = null; }
+}
+const taskListeners = new Set();
+window.cp = {
+  onTask(t) {
+    if (finishedTasks.has(t.id)) return;  // a late push after the poller already finished it
+    taskListeners.forEach((fn) => fn(t));
+    if (silentTasks.has(t.id)) {
+      if (t.done) {
+        finishedTasks.add(t.id); activeTasks.delete(t.id); silentTasks.delete(t.id);
+        if (t.error) toast(esc(t.error), "bad", 9000);
+        const cb = taskDone[t.id]; delete taskDone[t.id];
+        if (cb && !t.error) cb(t.result || {});
+      }
+      return;
+    }
+    let el = S.tasks[t.id];
+    if (!el) {
+      el = S.tasks[t.id] = toast(`<b>${esc(TASK_LABEL[t.name] || "Working")}</b><div class="tmsg"></div><div class="prog"><i></i></div>
+        <button class="btn small">Cancel</button>`, "", 0);
+      $("button", el).onclick = () => call("cancel_task", t.id);
+    }
+    if (t.name && TASK_LABEL[t.name]) $("b", el).textContent = TASK_LABEL[t.name];
+    $(".tmsg", el).textContent = t.message || "";
+    $(".prog i", el).style.width = `${Math.round((t.progress || 0) * 100)}%`;
+    if (t.done) {
+      finishedTasks.add(t.id); activeTasks.delete(t.id);
+      el.remove(); delete S.tasks[t.id];
+      if (t.error) toast(esc(t.error), "bad", 9000);
+      const cb = taskDone[t.id]; delete taskDone[t.id];
+      if (cb && !t.error) cb(t.result || {});
+    }
+  },
+};
+
+/* ------------------------------------------------------------------ modal */
+function modal(html, wire, cls = "") {
+  const back = $("#modal");
+  back.innerHTML = `<div class="modal ${cls}" role="dialog" aria-modal="true">${html}</div>`;
+  back.hidden = false;
+  const close = () => { back.hidden = true; back.innerHTML = ""; };
+  back.onclick = (e) => { if (e.target === back) close(); };
+  $$("[data-close]", back).forEach((b) => (b.onclick = close));
+  wire && wire(back, close);
+  const f = $("input, .btn.primary", back); f && f.focus();
+}
+function confirmBox(title, text, okLabel, danger = false) {
+  return new Promise((res) => modal(`<h3>${esc(title)}</h3><p>${text}</p><div class="btn-row">
+      <button class="btn" data-close>Cancel</button><button class="btn ${danger ? "danger" : "primary"}" id="mOk">${esc(okLabel)}</button></div>`,
+    (m, close) => { $("#mOk", m).onclick = () => { close(); res(true); }; m.addEventListener("click", (e) => { if (e.target.hasAttribute("data-close")) res(false); }); }));
+}
+
+/* Ask what to do with files that already exist. Resolves true (overwrite), false (keep a copy) or null (cancelled). */
+function conflictChoice(title, intro, okLabel) {
+  return new Promise((res) => modal(`<h3>${esc(title)}</h3><p>${intro}</p>
+    <p class="muted">If a file is already in your game folder:</p>
+    <div class="choice-list">
+      <label class="choice"><input type="radio" name="cmode" value="keep" checked><span><b>Keep a copy of the old file</b>
+        <em>It's moved to Temporarily Disabled Mods\\_Backups (replaced files), so you can roll back.</em></span></label>
+      <label class="choice"><input type="radio" name="cmode" value="overwrite"><span><b>Overwrite it</b>
+        <em>The old file is replaced and can't be recovered. Uses no extra disk space.</em></span></label>
+    </div>
+    <div class="btn-row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="cOk">${esc(okLabel)}</button></div>`,
+  (m, close) => {
+    let done = false;
+    $("#cOk", m).onclick = () => { done = true; const v = $("input[name=cmode]:checked", m).value; close(); res(v === "overwrite"); };
+    m.addEventListener("click", (e) => { if (!done && (e.target === m || e.target.hasAttribute("data-close"))) res(null); });
+  }));
+}
+
+/* ------------------------------------------------------------------ mod backups */
+async function save(vals) { const r = await call("save_settings", vals); if (r && r.ok) S.boot.settings = r.settings; return r; }
+const fmtWhen = (ts) => ts ? `${fmtDate(ts)}, ${new Date(ts * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : "";
+function backupReadout() {
+  const b = S.backup;
+  if (!b) return "Checking…";
+  if (b.running) return "Backing up now…";
+  return b.last ? `${fmtDate(b.last)} (${ago(b.last)})` : "Never";
+}
+function renderBackupReadout() { const d = $("#ovBackup"); if (d) d.textContent = backupReadout(); }
+function backupsView(d) {
+  const rows = d.backups.map((b) => `<tr>
+      <td>${esc(fmtWhen(b.created))}</td><td><span class="src ${b.kind === "scheduled" ? "vortex" : "loose"}">${b.kind === "scheduled" ? "Scheduled" : "Manual"}</span></td>
+      <td>${b.mods ? plural(b.mods, "mod") : "—"}</td><td class="num">${fmtSize(b.size)}</td>
+      <td class="num"><button class="btn small" data-restore="${esc(b.path)}">Restore</button> <button class="btn small danger" data-del="${esc(b.path)}" title="Delete this backup">Delete</button></td></tr>`).join("");
+  return `<div class="field"><label for="bkSched">Automatic backups</label><div class="bk-sched">
+      <select id="bkSched"><option value="off">Off</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select>
+      <span>keep the newest</span><select id="bkKeep">${[3, 5, 10, 20].map((n) => `<option value="${n}" ${n === d.keep ? "selected" : ""}>${n}</option>`).join("")}</select>
+      <span class="muted small bk-help">Runs while this tool is open and the game isn't running. If a backup is due when you open the tool, it runs then. Older scheduled backups are deleted past the limit; manual backups are always kept.</span></div></div>
+    <div class="field"><label>Saved in</label><div class="bk-folder"><code title="${esc(d.folder)}">${esc(d.folder)}</code>
+      <button class="btn small" id="bkOpenDir">Open folder</button><button class="btn small" id="bkDir">Change</button>${d.custom_folder ? `<button class="btn small" id="bkDefault">Use default</button>` : ""}</div></div>
+    ${d.backups.length ? `<div class="bk-list"><table class="table"><thead><tr><th>Created</th><th>Type</th><th>Contents</th><th class="num">Size</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<p class="note">No backups yet. Back up now before your next big update or preset install.</p>`}`;
+}
+/* Wire a rendered backupsView. `leave` runs before an action that opens another dialog; `again` re-renders the view. */
+function wireBackups(root, d, again, leave = () => {}) {
+  $("#bkSched", root).value = d.schedule;
+  $("#bkSched", root).onchange = async (e) => { await save({ backup_schedule: e.target.value }); toast(e.target.value === "off" ? "Automatic backups are off." : `Mods will be backed up ${e.target.value}.`, "ok", 2500); poll(); };
+  $("#bkKeep", root).onchange = (e) => save({ backup_keep: +e.target.value });
+  $("#bkOpenDir", root).onclick = async () => result(await call("open_mod_backups"));
+  $("#bkDir", root).onclick = async () => { const r = await call("mod_backup_browse_dir"); if (r.ok) again(); };
+  const def = $("#bkDefault", root); if (def) def.onclick = async () => { await call("mod_backup_reset_dir"); again(); };
+  const now = $("#bkNow", root);
+  if (now) now.onclick = async () => { leave(); startTask(await call("mod_backup_create", "manual"), async (res) => { await backupDone(res); if (S.page === "settings") again(); }); };
+  $$("[data-restore]", root).forEach((b) => (b.onclick = async () => {
+    const path = b.dataset.restore; leave();
+    const ow = await conflictChoice("Restore this backup?", "Every file in the backup goes back where it was. Mods you installed after the backup stay installed.", "Restore");
+    if (ow === null) return again();
+    startTask(await call("mod_backup_restore", path, ow), async (res) => {
+      toast(`Restored ${plural(res.restored, "file")}.${res.replaced ? ` ${plural(res.replaced, "existing file")} ${res.overwrite ? "overwritten" : "kept in _Backups (replaced files)"}.` : ""}`, "ok", 7000);
+      await refreshMods(true); go(S.page);
+    });
+  }));
+  $$("[data-del]", root).forEach((b) => (b.onclick = async () => {
+    const path = b.dataset.del; leave();
+    if (await confirmBox("Delete this backup?", "The backup file is deleted permanently. Your installed mods aren't affected.", "Delete backup", true)) {
+      result(await call("mod_backup_delete", path), "Backup deleted."); poll();
+    }
+    again();
+  }));
+}
+async function openBackups() {
+  const d = await call("mod_backups_list");
+  if (!result(d)) return;
+  S.backup = d.state; renderBackupReadout();
+  modal(`<h3>Mod backups</h3>
+    <p class="muted">A backup is one zip of every manually installed mod, enabled or disabled, plus the core frameworks.
+      Vortex and MO2 keep their own copies of their mods, so those aren't included.</p>
+    ${backupsView(d)}
+    <div class="btn-row"><button class="btn" data-close>Close</button><button class="btn primary" id="bkNow" ${d.state.running ? "disabled" : ""}>${d.state.running ? "Backing up…" : "Back up now"}</button></div>`,
+  (m, close) => wireBackups(m, d, openBackups, close), "wide-bk");
+}
+async function renderSettingsBackups() {
+  const host = $("#setBackups");
+  if (!host) return;
+  const d = await call("mod_backups_list");
+  if (!result(d)) return;
+  S.backup = d.state;
+  const last = d.state.last ? `Last backup ${fmtWhen(d.state.last)} (${ago(d.state.last)}).` : "No backups yet.";
+  host.innerHTML = `<div class="upd-strip"><p>${esc(last)}</p><button class="btn small primary" id="bkNow" ${d.state.running ? "disabled" : ""}>${d.state.running ? "Backing up…" : "Back up now"}</button></div>${backupsView(d)}`;
+  wireBackups(host, d, renderSettingsBackups);
+}
+async function backupDone(res) {
+  S.backup = { ...(S.backup || {}), last: res.created, running: false }; renderBackupReadout();
+  toast(`${res.kind === "scheduled" ? "Scheduled backup" : "Backup"} saved: ${plural(res.mods, "mod")}, ${fmtSize(res.size)}.${res.pruned ? ` Removed ${plural(res.pruned, "older scheduled backup")}.` : ""}`, "ok", 6000);
+}
+
+/* ------------------------------------------------------------------ chrome */
+const PAGES = {
+  overview: { title: "Overview", sub: "Updates, setup health and the mod list you share when asking for help." },
+  mods: { title: "Mods", sub: "Every installed mod, grouped from its files. Click one for details." },
+  core: { title: "Core Frameworks", sub: "Most mods need these. Missing or outdated ones cause most crashes." },
+  logs: { title: "Logs", sub: "Framework logs from your last session, with errors highlighted." },
+  nexus: { title: "Nexus Mods", sub: "Link your account, find your mods on Nexus and track them." },
+  browse: { title: "Browse Nexus", sub: "Trending, new and updated Cyberpunk 2077 mods, and search." },
+  settings: { title: "Settings", sub: "Game folder, mod managers and mod list options." },
+};
+function setHeader() {
+  const p = PAGES[S.page];
+  $("#pageTitle").textContent = p.title;
+  $("#pageSub").textContent = p.sub;
+  const g = S.boot?.game || {};
+  const sm = S.summary || {};
+  $("#slabMeta").innerHTML = g.valid ? `<div><b>${esc(g.version || "—")}</b>Game version</div>
+    <div><b>${g.phantom_liberty ? "Yes" : "No"}</b>Phantom Liberty</div>
+    <div><b>${sm.enabled ?? "—"}</b>Mods enabled</div>` : "";
+}
+async function go(page) {
+  S.page = page;
+  $$(".nav").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
+  closeDrawer();
+  setHeader();
+  const el = $("#page");
+  el.className = "page";
+  el.scrollTop = 0;
+  if (!S.boot.game.valid && !["settings", "nexus", "browse"].includes(page)) return renderNoGame(el);
+  await RENDER[page](el);
+}
+function renderNoGame(el) {
+  el.innerHTML = `<div class="panel hatch"><div class="empty"><b>Point the tool at your game folder</b>
+    It's the folder that contains <code>bin\\x64\\Cyberpunk2077.exe</code>.<br><br>
+    <button class="btn primary" id="ngPick">Choose game folder</button> <button class="btn" id="ngSet">Open settings</button></div></div>`;
+  $("#ngPick").onclick = pickGameDir;
+  $("#ngSet").onclick = () => go("settings");
+}
+async function pickGameDir() {
+  const r = await call("browse_game_dir");
+  if (r.ok) { S.boot.game = r.game; loadGameIcon(); toast("Game folder set.", "ok"); await refreshMods(true); go(S.page === "settings" ? "settings" : "overview"); }
+  else result(r);
+}
+
+/* ------------------------------------------------------------------ status polling */
+async function poll() {
+  const st = await call("get_status");
+  S.status = st || {};
+  applyRunning(st.running || {}, st.valid);
+  renderFooterRun();
+  const nx = st.nxm_tasks || {};
+  (nx.errors || []).forEach((e) => toast(esc(e), "bad", 9000));
+  (nx.tasks || []).forEach((id) => startTask({ ok: true, task: id, name: "update" }, async (res) => {
+    toast(`Installed <b>${esc(res.name)}</b>${res.version ? ` ${esc(res.version)}` : ""}.`, "ok", 7000);
+    await refreshMods(true); if (S.page === "overview") renderUpdatesPanel(); else if (S.page === "mods") renderModsTable();
+  }));
+  if (st.backup) { S.backup = st.backup; renderBackupReadout(); }
+  if (st.backup_task) startTask({ ok: true, task: st.backup_task, name: "backup" }, backupDone);
+  const sm = st.summary;
+  if (sm) {
+    S.summary = sm;
+    $("#navModCount").textContent = sm.enabled;
+    $("#navModCount").className = "info";
+  }
+  const cf = $("#navCoreFlag");
+  cf.textContent = st.core_ok === false ? st.core_missing.length : "";
+  cf.className = st.core_ok === false ? "bad" : "";
+  const lf = $("#navLogFlag");
+  lf.textContent = st.log_errors ? st.log_errors : "";
+  lf.className = st.log_errors ? "bad" : "";
+  const nf = $("#navNexusFlag");
+  nf.textContent = sm && sm.updates ? sm.updates : "";
+  nf.className = sm && sm.updates ? "info" : "";
+  const g = S.boot.game;
+  $("#sbGame").textContent = g.valid ? `${g.store || ""} · ${g.dir}`.replace(/^ · /, "") : "No game folder set";
+  const mgr = [];
+  if (sm?.vortex) mgr.push(`Vortex: ${sm.vortex} mods`);
+  if (sm?.mo2) mgr.push(`MO2: ${sm.mo2} mods`);
+  $("#sbManager").textContent = mgr.join("   ");
+  setHeader();
+  if (st.changed && S.page === "mods") { await refreshMods(); renderModsTable(); }
+  if (st.changed && S.page === "overview") RENDER.overview($("#page"));
+}
+
+/* ------------------------------------------------------------------ OVERVIEW */
+async function refreshMods(force = false) {
+  const r = await call("get_mods", force);
+  if (r.ok) { S.mods = r.mods; S.summary = r.summary; }
+  return r;
+}
+const RENDER = {};
+function renderFooterRun() {
+  const run = S.running || {}, st = S.status || {};
+  const parts = [];
+  if (run.game) parts.push(`<span class="live">Cyberpunk 2077 is running. Mod changes are locked.</span>`);
+  if (st.log_errors) {
+    const fresh = st.log_errors_fresh;
+    const where = (st.logs_with_errors || []).slice(0, 3).join(", ");
+    parts.push(`<button class="sb-alert" id="sbErr" title="${esc(where)}">◆ ${fresh || run.game ? "Game error detected" : "Errors in last session's logs"} (${plural(st.log_errors, "error")}${where ? ` in ${esc(where)}` : ""}). Review logs</button>`);
+  }
+  $("#sbRun").innerHTML = parts.join("");
+  const b = $("#sbErr");
+  if (b) b.onclick = () => { S.logSel = (st.logs_with_errors || [])[0] || S.logSel; S.errorsOnly = true; go("logs"); };
+}
+function applyRunning(run, valid = true) {
+  S.running = run;
+  const lb = $("#launchBtn");
+  lb.disabled = !!run.game || !!run.launching || !valid;
+  lb.classList.toggle("running", !!run.game);
+  lb.classList.toggle("launching", !!run.launching && !run.game);
+  $("#launchLabel").textContent = run.game ? "Game Running" : run.launching ? "Starting…" : "Launch Game";
+  $("#launchSub").textContent = run.game ? "Mods are locked" : run.launching ? "Waiting for game" : launchVia();
+  renderFooterRun();
+  if (S.page === "mods" && S._lastGame !== !!run.game) { S._lastGame = !!run.game; renderModsTable(); }
+}
+async function pollRunning() { const r = await call("get_running"); if (r && r.ok !== false) applyRunning(r, S.boot.game.valid); }
+function launchVia() {
+  const v = S.boot?.settings?.launch_via, mo2 = S.boot?.managers?.mo2 && S.mods.some((m) => m.source === "mo2");
+  if (v === "store") return "through Steam";
+  if (v === "mo2" || (v === "auto" && mo2)) return "through MO2";
+  return "Cyberpunk 2077";
+}
+/* Header logo: the PNG is light artwork on a dark card. Measure it instead of assuming a layout:
+   trim to the bright artwork, split it into horizontal bands, and if the bottom band is a short
+   subtitle line (the small "MOD LIST TOOL"), crop it off and show our larger live text instead.
+   Brightness becomes alpha, and the result is used as a CSS mask so it prints black on yellow. */
+function applyLogo(cached) {
+  for (const box of [$("#slabLogo"), $("#splashLogo")]) {
+    if (!box) continue;
+    box.style.setProperty("--logo", `url(${cached.mask})`);
+    box.style.setProperty("--logo-ratio", cached.ratio);
+    box.classList.remove("text-only");
+    box.classList.toggle("no-sub", !!cached.noSub);
+  }
+}
+async function loadLogo() {
+  const box = $("#slabLogo");
+  const r = await call("app_logo");
+  if (!r.ok || !r.uri) { box.classList.add("text-only"); return; }
+  const cacheKey = "cp77mlt.logo." + r.uri.length + "." + r.uri.slice(-40);
+  try {   // processed logo from last launch: show it instantly
+    const hit = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (hit && hit.mask) { applyLogo(hit); return; }
+  } catch (e) { /* storage unavailable */ }
+  await new Promise((done) => {
+  const img = new Image();
+  img.onload = () => {
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const src = document.createElement("canvas");
+    src.width = W; src.height = H;
+    const sctx = src.getContext("2d");
+    sctx.drawImage(img, 0, 0);
+    const all = sctx.getImageData(0, 0, W, H).data;
+    // background = median corner brightness; artwork = clearly brighter than that
+    const lumAt = (x, y) => { const i = (y * W + x) * 4; return Math.max(all[i], all[i + 1], all[i + 2]) * (all[i + 3] / 255); };
+    const corners = [lumAt(0, 0), lumAt(W - 1, 0), lumAt(0, H - 1), lumAt(W - 1, H - 1)].sort((a, b) => a - b);
+    const bg = (corners[1] + corners[2]) / 2, thr = bg + 50;
+    const rows = new Array(H).fill(0);
+    let x0 = W, x1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (lumAt(x, y) > thr) { rows[y]++; if (x < x0) x0 = x; if (x > x1) x1 = x; }
+    const bands = [];
+    for (let y = 0, start = -1, gap = 0; y <= H; y++) {
+      const on = y < H && rows[y] > 0;
+      if (on) { if (start < 0) start = y; gap = 0; }
+      else if (start >= 0 && (++gap >= 2 || y === H)) { bands.push([start, y - gap]); start = -1; gap = 0; }
+    }
+    if (!bands.length || x1 < 0) { box.classList.add("text-only"); done(); return; }
+    const top = bands[0][0], total = bands[bands.length - 1][1] - top + 1;
+    let bottom = bands[bands.length - 1][1], hasSub = false;
+    const last = bands[bands.length - 1];
+    if (bands.length >= 2 && (last[1] - last[0] + 1) < total * 0.22) { bottom = bands[bands.length - 2][1]; hasSub = true; }
+    // recompute horizontal extent for the kept rows only
+    x0 = W; x1 = -1;
+    for (let y = top; y <= bottom; y++) for (let x = 0; x < W; x++) if (lumAt(x, y) > thr) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+    const pad = 2, cx = Math.max(0, x0 - pad), cy = Math.max(0, top - pad);
+    const cw = Math.min(W, x1 + pad + 1) - cx, ch = Math.min(H, bottom + pad + 1) - cy;
+    const c = document.createElement("canvas");
+    c.width = cw; c.height = ch;
+    const ctx = c.getContext("2d");
+    const out = ctx.createImageData(cw, ch), o = out.data;
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+      const l = lumAt(cx + x, cy + y), i = (y * cw + x) * 4;
+      o[i] = o[i + 1] = o[i + 2] = 0;
+      o[i + 3] = Math.max(0, Math.min(255, (l - bg - 20) * 255 / 150));
+    }
+    ctx.putImageData(out, 0, 0);
+    const result = { mask: c.toDataURL("image/png"), ratio: `${cw} / ${ch}`, noSub: !hasSub && cw / ch < 3.8 };
+    applyLogo(result);
+    try { localStorage.setItem(cacheKey, JSON.stringify(result)); } catch (e) { /* storage full/unavailable */ }
+    done();
+    // If a subtitle band was cropped off, print ours. If not, the artwork either has no subtitle (a wide
+    // wordmark, ~4:1) or one touching the "2077" line (taller than ~3.8:1): then keep the image's own.
+  };
+  img.onerror = () => { box.classList.add("text-only"); done(); };
+  img.src = r.uri;
+  });
+}
+function preloadImage(url, timeout = 2000) {
+  return new Promise((res) => {
+    if (!url) return res();
+    const i = new Image(), t = setTimeout(res, timeout);
+    i.onload = i.onerror = () => { clearTimeout(t); res(); };
+    i.src = url;
+  });
+}
+function renderUserChip() {
+  const u = S.boot?.nexus?.user, chip = $("#userChip");
+  chip.classList.toggle("off", !u);
+  chip.innerHTML = u
+    ? `${u.avatar ? `<img src="${esc(u.avatar)}" alt="" onerror="this.outerHTML='<i class=ph>${esc((u.name || "?")[0].toUpperCase())}</i>'">` : `<i class="ph">${esc((u.name || "?")[0].toUpperCase())}</i>`}
+       <span><b>${esc(u.name)}</b><small class="${u.is_premium ? "prem" : ""}">${u.is_premium ? "Nexus Premium" : "Nexus Mods"}</small></span><i class="dot" title="Signed in"></i>`
+    : `<i class="ph">?</i><span><b>Not signed in</b><small>Connect Nexus Mods</small></span><i class="dot"></i>`;
+}
+async function loadGameIcon() {
+  const r = await call("game_icon");
+  const img = $("#gameIcon");
+  if (r.ok && r.uri) { img.src = r.uri; img.hidden = false; $("#gameIconFallback").style.display = "none"; }
+  else { img.hidden = true; $("#gameIconFallback").style.display = ""; }
+}
+RENDER.overview = async (el) => {
+  await refreshMods();
+  const [core, lg, st] = await Promise.all([call("get_core"), call("get_logs"), call("get_status")]);
+  const sm = S.summary, g = S.boot.game;
+  // Setup check: green = good, orange = outdated, red = needs fixing
+  const alerts = [];
+  const coreList = core.core || [];
+  const missing = coreList.filter((c) => !c.installed);
+  const outdated = coreList.filter((c) => c.installed && c.update?.update);
+  missing.forEach((c) => alerts.push({ lvl: "bad",
+    t: `<b>${esc(c.name)}</b> is ${c.disabled ? "disabled" : "not installed"}. ${esc(c.desc)}`,
+    a: c.disabled ? `<button class="btn small" data-go="core">Review</button>` : `<button class="btn small" data-url="https://www.nexusmods.com/cyberpunk2077/mods/${c.nexus_id}">Get it on Nexus</button>` }));
+  if (!missing.length && outdated.length) alerts.push({ lvl: "warn",
+    t: `All ${coreList.length} core frameworks are installed, but ${outdated.map((c) => `<b>${esc(c.name)}</b>`).join(", ")} ${outdated.length === 1 ? "has an update" : "have updates"}.`,
+    a: `<button class="btn small" data-go="core">Update</button>` });
+  if (!missing.length && !outdated.length) alerts.push({ lvl: "ok", t: `All ${coreList.length} core frameworks are installed and up to date.` });
+  const errLogs = (lg.logs || []).filter((l) => l.errors);
+  errLogs.forEach((l) => alerts.push({ lvl: "bad",
+    t: `<b>${esc(l.name)}</b> logged ${plural(l.errors, "error")} in the last session.`, a: `<button class="btn small" data-log="${esc(l.name)}">View log</button>` }));
+  if (!errLogs.length) alerts.push({ lvl: (lg.logs || []).length ? "ok" : "none",
+    t: (lg.logs || []).length ? "The last game session logged no framework errors." : "No framework logs yet. They appear after you play once." });
+  const total = Math.max(sm.total, 1);
+  const logs = lg.logs || [];
+  const auto = S.boot.settings.auto_select_all_logs;
+  el.innerHTML = `<div class="panel upd-panel" id="updPanel"></div><div class="grid cols-2">
+    <div class="panel">
+      <div class="readout">
+        <div class="bignum" aria-label="${sm.enabled} mods enabled">${sm.enabled}</div>
+        <dl>
+          <dt>Mods enabled</dt><dd>${sm.enabled} of ${sm.total}</dd>
+          <dt>Disabled</dt><dd>${sm.disabled}</dd>
+          <dt>Installed manually</dt><dd>${sm.loose}</dd>
+          ${sm.vortex ? `<dt>Through Vortex</dt><dd>${sm.vortex}</dd>` : ""}
+          ${sm.mo2 ? `<dt>Through MO2</dt><dd>${sm.mo2}</dd>` : ""}
+          <dt>Store</dt><dd>${esc(g.store)}</dd>
+          <dt>Last backup</dt><dd><button class="link plain" id="ovBackup" title="Back up or restore your mods">${esc(backupReadout())}</button></dd>
+        </dl>
+      </div>
+      <div class="bar" title="Manual / Vortex / MO2 / disabled">
+        <i style="flex:${sm.loose - S.mods.filter((m) => m.source === "loose" && !m.enabled).length};background:var(--yellow)"></i>
+        <i style="flex:${S.mods.filter((m) => m.source === "vortex" && m.enabled).length};background:var(--cyan)"></i>
+        <i style="flex:${S.mods.filter((m) => m.source === "mo2" && m.enabled).length};background:var(--bone)"></i>
+        <i style="flex:${sm.disabled};background:var(--graphite)"></i>
+        <i style="flex:${total === 1 && !sm.total ? 1 : 0};background:var(--graphite)"></i>
+      </div>
+    </div>
+    <div class="panel"><h2>Setup check</h2><ul class="alerts">${alerts.map((a) =>
+      `<li class="lvl-${a.lvl}"><span class="dot" aria-label="${{ ok: "Good", warn: "Outdated", bad: "Problem", none: "" }[a.lvl]}"></span><span>${a.t}</span><span class="act">${a.a || ""}</span></li>`).join("")}</ul></div>
+  </div>
+  <div class="panel" style="margin-top:18px">
+    <h2>Mod list for troubleshooting <span class="hint">${S.boot.settings.ask_report_path ? "You'll choose the name and folder" : `Saved to ${esc(S.boot.settings.output_dir_effective)}`}</span></h2>
+    <p class="muted" style="margin-top:-4px;max-width:70ch">Creates <b>Cyberpunk 2077 Mod List.txt</b> with your game version, frameworks, every mod and the logs you pick. Attach it when you ask a mod author for help.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:4px 26px;margin:10px 0 14px">
+      ${logs.length ? logs.map((l) => `<label class="check"><input type="checkbox" class="logpick" value="${esc(l.name)}" ${auto ? "checked" : ""}>${esc(l.name)}${l.errors ? ` <span style="color:var(--red)">(${plural(l.errors, "error")})</span>` : ""}</label>`).join("")
+      : `<span class="muted">No framework logs found yet. Run the game once with mods installed.</span>`}
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" id="genBtn">Generate mod list</button>
+      ${S.lastReport ? `<button class="btn" id="openRep">Open file</button><button class="btn" id="copyRep">Copy text</button><button class="btn" id="showRep">Show in folder</button>` : ""}
+    </div>
+  </div>`;
+  wireCommon(el);
+  $("#ovBackup").onclick = openBackups;
+  renderUpdatesPanel();
+  $("#genBtn").onclick = async () => {
+    const names = $$(".logpick:checked").map((c) => c.value);
+    const r = await call("generate_report", names);
+    if (r.cancelled) return;
+    if (result(r)) { S.lastReport = r.path; toast(`Mod list saved to <b>${esc(r.path)}</b>`, "ok", 6000); RENDER.overview(el); }
+  };
+  if (S.lastReport) {
+    $("#openRep").onclick = () => call("open_path", S.lastReport);
+    $("#showRep").onclick = () => call("open_path", S.lastReport.replace(/[\\/][^\\/]+$/, ""));
+    $("#copyRep").onclick = async () => {
+      const r = await call("copy_report", S.lastReport);
+      if (r.ok) { await navigator.clipboard.writeText(r.text).then(() => toast("Mod list copied to the clipboard.", "ok"), () => toast("Couldn't access the clipboard.", "bad")); }
+    };
+  }
+};
+function wireCommon(el) {
+  $$("[data-go]", el).forEach((b) => (b.onclick = () => go(b.dataset.go)));
+  $$("[data-url]", el).forEach((b) => (b.onclick = () => call("open_url", b.dataset.url)));
+  $$("[data-log]", el).forEach((b) => (b.onclick = () => { S.logSel = b.dataset.log; go("logs"); }));
+  $$("[data-mod]", el).forEach((b) => (b.onclick = async () => { await go("mods"); openDrawer(b.dataset.mod); }));
+}
+
+/* updates panel (top of overview) */
+let updTaskId = null, autoChecked = false;
+const ago = (ts) => { if (!ts) return ""; const m = Math.round((Date.now() / 1000 - ts) / 60);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+async function renderUpdatesPanel() {
+  const host = $("#updPanel");
+  if (!host) return;
+  const u = await call("get_updates");
+  if (!u.ok) { host.remove(); return; }
+  const checking = updTaskId && activeTasks.has(updTaskId);
+  if (!u.connected) {
+    host.innerHTML = `<h2>Mod updates</h2><div class="upd-strip"><p>Connect your Nexus Mods account to see which of your mods have updates.</p>
+      <button class="btn primary" data-go="nexus">Connect Nexus Mods</button></div>`;
+    wireCommon(host); return;
+  }
+  const rows = u.updates;
+  const head = `<h2>${rows.length ? `${plural(rows.length, "update")} available` : "Mod updates"}
+    <span class="hint">${checking ? "Checking Nexus…" : u.checked ? `Checked ${ago(u.checked)}` : "Not checked yet"}
+    ${checking ? "" : `<button class="link" id="updCheck">Check now</button>`}</span></h2>`;
+  const body = rows.length ? `<div class="upd-rows">${rows.map((r) => `
+      <div class="n"><button class="link plain" data-open="${esc(r.key)}" title="${r.core ? "Open Core Frameworks" : "Show details"}">${esc(r.name)}</button><span class="src ${r.core ? "fw" : r.source}">${r.core ? "Framework" : SRC[r.source] || r.source}</span></div>
+      <div class="vv" title="${r.basis === "estimated" ? "Installed version estimated from file dates" : r.basis === "dates" ? "Nexus has a newer upload than your files; installed version unknown" : ""}">${r.basis === "dates" ? "Newer upload" : `${esc(r.installed || "?")}${r.basis === "estimated" ? "<sup>≈</sup>" : ""}`} → <b>${esc(r.latest)}</b></div>
+      <div class="d">${r.updated ? fmtDate(r.updated) : ""}</div>
+      <div class="btn-row" style="flex-wrap:nowrap"><button class="btn small primary" data-upd="${esc(r.key)}">${(r.source === "loose" || r.core) && u.premium ? "Update" : "Get update"}</button>
+        <button class="btn small" data-uptodate="${esc(r.key)}" title="I already have this version">Dismiss</button></div>`).join("")}</div>`
+    : `<p class="muted" style="margin:0">${checking ? "Comparing your installed versions with Nexus." : u.checked ? "Everything linked to Nexus is up to date." : "Run a check to compare your installed versions with Nexus."}</p>`;
+  const unlinked = S.mods.filter((m) => m.source === "loose" && !m.nexus_id && !m.github && (S.boot.settings.queue_include_disabled || m.enabled)).length;
+  const foot = unlinked && !checking ? `<p class="muted upd-foot">${plural(unlinked, "manually installed mod")} ${unlinked === 1 ? "isn't" : "aren't"} linked to Nexus yet, so ${unlinked === 1 ? "it can't" : "they can't"} be checked.
+    <button class="link" id="updFind">Find them on Nexus</button></p>` : "";
+  host.innerHTML = head + body + foot + (checking ? `<div class="upd-prog"><i id="updBar"></i></div>` : "");
+  if ($("#updFind")) $("#updFind").onclick = () => runIdentify(null);
+  $$("[data-open]", host).forEach((b) => (b.onclick = () => b.dataset.open.startsWith("core:") ? go("core") : openDrawer(b.dataset.open)));
+  $$("[data-uptodate]", host).forEach((b) => (b.onclick = async () => { if (result(await call("mark_up_to_date", b.dataset.uptodate))) { await refreshMods(); renderUpdatesPanel(); poll(); } }));
+  if ($("#updCheck")) $("#updCheck").onclick = runUpdateCheck;
+  $$("[data-upd]", host).forEach((b) => (b.onclick = async () => {
+    const key = b.dataset.upd;
+    await doUpdate(key, () => renderUpdatesPanel());
+  }));
+  // first visit this session: check automatically if results are old
+  if (!checking && !autoChecked && (!u.checked || Date.now() / 1000 - u.checked > 6 * 3600)) { autoChecked = true; runUpdateCheck(); }
+}
+async function runUpdateCheck() {
+  autoChecked = true;
+  const r = await call("nexus_check_updates");
+  if (!r || r.ok === false) { result(r); return; }
+  updTaskId = r.task;
+  startTask(r, async (res) => {
+    toast(`Checked ${res.checked}: ${plural(res.updates, "update")} available.`, "ok", 5000);
+    await refreshMods(true); poll();
+    if (S.page === "overview") renderUpdatesPanel(); else if (S.page === "nexus") RENDER.nexus($("#page"));
+  }, S.page === "overview");
+  renderUpdatesPanel();
+}
+taskListeners.add((t) => {
+  if (t.id !== updTaskId) return;
+  const bar = $("#updBar"); if (bar) bar.style.width = `${Math.round(t.progress * 100)}%`;
+  const hint = $("#updPanel .hint"); if (hint && !t.done) hint.textContent = `Checking Nexus… ${t.message || ""}`;
+  if (t.done && t.error && S.page === "overview") renderUpdatesPanel();
+});
+
+async function doUpdate(key, after) {
+  const r = await call("nexus_update", key);
+  if (r.task) return startTask(r, async (res) => { toast(`Updated <b>${esc(res.name)}</b>${res.version ? ` to ${esc(res.version)}` : ""}.`, "ok", 6000); await refreshMods(true); after && after(); poll(); });
+  if (r.needs_nxm) return modal(`<h3>Update from the website</h3>
+    <p>Free Nexus accounts can't download through the API directly. Nexus offers a <b>Mod Manager Download</b> button for this instead.</p>
+    <p class="muted">Turn this on and that button installs the file here. Links for other games still go to the app that handled them before (Vortex or MO2), and you can switch this off in Settings at any time.</p>
+    <div class="btn-row"><button class="btn" data-close>Not now</button><button class="btn primary" id="nxmOn">Install Mod Manager Downloads here</button></div>`,
+    (m, close) => { $("#nxmOn", m).onclick = async () => { close(); if (result(await call("nxm_set", true), "Mod Manager Downloads will install here. Click the button on the Files tab.")) poll(); }; });
+  result(r);
+}
+async function runIdentify(keys = null) {
+  const r = await call("nexus_identify", keys);
+  startTask(r, async (res) => {
+    const bits = [];
+    if (res.by_url) bits.push(`${res.by_url} from Nexus links inside the mod's own files`);
+    if (res.by_github) bits.push(`${res.by_github} to GitHub repositories mentioned in their files`);
+    if (res.by_download) bits.push(`${res.by_download} from your downloaded archives`);
+    if (res.verified) bits.push(`${res.verified} confirmed by comparing files with Nexus`);
+    if (res.by_name) bits.push(`${res.by_name} by exact name`);
+    toast(`<b>Linked ${res.identified} of ${res.checked} mods</b>${bits.length ? `<br>${bits.join(", ")}` : ""}
+      ${res.suggested ? `<br>${plural(res.suggested, "possible match")} to review on the Nexus page.` : ""}
+      ${res.unlinked ? `<br>${res.unlinked} left to link by hand in the link queue.` : ""}
+      ${!res.logged_in ? "<br>Connect Nexus Mods to also search by name." : ""}${res.search_error ? `<br>Name search: ${esc(res.search_error)}` : ""}`, "ok", 12000);
+    await refreshMods(true);
+    if (S.page === "overview") renderUpdatesPanel(); else if (S.page === "mods") renderModsTable(); else if (S.page === "nexus") RENDER.nexus($("#page"));
+    if (res.identified && S.boot.nexus.user) runUpdateCheck();
+  });
+}
+
+/* search Nexus and link a mod (drawer + link queue) */
+function mountLinkSearch(host, key, initial, onLinked) {
+  host.innerHTML = `<div class="lsearch"><label class="lslabel">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13 13l5 5" stroke="currentColor" stroke-width="2"/></svg>
+      <input type="search" placeholder="Search Nexus by name" aria-label="Search Nexus" value="${esc(initial || "")}"></label>
+    <div class="lres-head muted small" hidden></div><div class="lresults" hidden></div><div class="lprev"></div></div>`;
+  const input = $("input", host), list = $(".lresults", host), head = $(".lres-head", host), prev = $(".lprev", host);
+  let timer = null, seq = 0;
+  const link = async (id, name) => {
+    const r2 = await call("nexus_link", key, String(id));
+    if (result(r2, `Linked to ${name || "#" + id}.`)) {
+      await refreshMods(); onLinked && onLinked(); poll();
+      const chk = await call("nexus_check_updates", [key]);   // newly linked: see if it's out of date
+      if (chk.ok) startTask(chk, async () => { await refreshMods(); if (S.page === "mods") renderModsTable(); }, true);
+    }
+  };
+  const run = async () => {
+    const q = input.value.trim(), my = ++seq;
+    if (q.length < 2) { list.hidden = head.hidden = true; return; }
+    list.hidden = head.hidden = false; head.textContent = "Searching…"; list.innerHTML = "";
+    const r = await call("nexus_search", q);
+    if (my !== seq) return;
+    if (!r.ok) { head.textContent = r.error; return; }
+    head.textContent = r.results.length ? `${plural(r.results.length, "result")}. Click one to preview it, or Link to link it now.` : "No matches. Try fewer words, or paste the mod's URL above.";
+    list.innerHTML = r.results.map((x) => `<div class="lrow" data-id="${x.mod_id}" data-name="${esc(x.name)}" tabindex="0">
+        <span class="lname">${esc(x.name)}</span><small>#${x.mod_id}${x.version ? ` · ${esc(x.version)}` : ""}</small>
+        <button class="btn small primary" data-link>Link</button></div>`).join("");
+    $$(".lrow", list).forEach((row) => {
+      const id = +row.dataset.id, name = row.dataset.name;
+      row.onclick = (e) => { if (!e.target.closest("[data-link]")) preview(id); };
+      row.ondblclick = () => link(id, name);
+      row.onkeydown = (e) => { if (e.key === "Enter") preview(id); };
+      $("[data-link]", row).onclick = (e) => { e.stopPropagation(); link(id, name); };
+    });
+  };
+  const preview = async (id) => {
+    $$(".lrow", list).forEach((r) => r.classList.toggle("on", +r.dataset.id === id));
+    prev.innerHTML = `<p class="muted small">Loading #${id}…</p>`;
+    const r = await call("nexus_mod_info", id);
+    if (!r.ok) { prev.innerHTML = `<p class="muted">${esc(r.error)}</p>`; return; }
+    const d = r.mod;
+    prev.innerHTML = `<div class="lpreview">${d.picture_url ? `<img src="${esc(d.picture_url)}" alt="">` : "<span></span>"}<div>
+      <b>${esc(d.name)}</b> <span class="muted">by ${esc(d.author || "unknown")} · ${esc(d.version || "")}</span>
+      <p>${esc((d.summary || "").replace(/<[^>]+>/g, "").slice(0, 180))}</p>
+      <div class="btn-row"><button class="btn small primary" data-link>Link to this mod</button><button class="btn small" data-open>Open page</button></div></div></div>`;
+    $("[data-open]", prev).onclick = () => call("open_url", `https://www.nexusmods.com/cyberpunk2077/mods/${id}`);
+    $("[data-link]", prev).onclick = () => link(id, d.name);
+  };
+  input.oninput = () => { clearTimeout(timer); timer = setTimeout(run, 350); };
+  input.onkeydown = (e) => { if (e.key === "Enter") { clearTimeout(timer); run(); } };
+  if (initial) run();
+}
+const niceName = (n) => n.replace(/^[^A-Za-z0-9]+/, "").replace(/[_\-.]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+
+/* ------------------------------------------------------------------ MODS */
+RENDER.mods = async (el) => {
+  const r = await refreshMods();
+  if (!r.ok) return result(r);
+  const f = S.filter;
+  el.innerHTML = `
+    <div class="toolbar">
+      <div class="search"><input type="search" id="q" placeholder="Search mods, files or Nexus IDs" value="${esc(f.q)}" aria-label="Search mods"></div>
+      <div class="seg" id="segState"></div>
+      <div class="seg" id="segSource"></div>
+    </div>
+    <div class="subbar"><div class="chips" id="locChips"></div><div class="btn-row">
+      <button class="btn" id="btnInstall" title="Install a mod from a .zip, .7z or .rar you downloaded">Install mod</button>
+      <button class="btn" id="btnMore" aria-haspopup="true">More actions</button></div></div>
+    <table class="table" id="modsTable"><thead><tr>
+      <th style="width:34px"><label class="check" title="Select all shown"><input type="checkbox" id="selAll"></label></th>
+      <th style="width:76px" title="Switch a mod on or off">Toggle</th><th data-sort="name" id="thName" title="Click to flip the order">Mod Name A to Z</th><th data-sort="source" style="width:90px">Source</th>
+      <th data-sort="version" style="width:110px">Version</th><th data-sort="nexus" style="width:150px">Nexus</th><th data-sort="size" style="width:90px;text-align:right">Size</th>
+    </tr></thead><tbody></tbody></table>
+    <div id="bulkHost"></div>`;
+  $("#q").oninput = (e) => { f.q = e.target.value; renderModsTable(); };
+  const installDone = async (res) => {
+    const n = res.displaced?.length;
+    toast(`Installed ${plural(res.installed.length, "file")}.${n ? res.overwritten ? ` ${plural(n, "existing file")} overwritten.` : ` ${plural(n, "replaced file")} backed up to the disabled folder.` : ""}`, "ok", 7000);
+    await refreshMods(true); renderModsTable();
+  };
+  $("#btnInstall").onclick = async () => startTask(await call("install_archive", "mod"), installDone);
+  $("#btnMore").onclick = () => modal(`<h3>More actions</h3>
+    <p class="muted">These act on manually installed mods. Vortex and MO2 mods stay under their manager's control.</p>
+    <div class="btn-row" style="justify-content:flex-start;flex-direction:column;align-items:stretch">
+      <button class="btn" id="bEnableAll">Enable all manual mods</button>
+      <button class="btn" id="bDisableAll">Disable all manual mods</button>
+      <button class="btn" id="bBackups">Back up or restore mods</button>
+      <button class="btn" id="bImport">Install a mod preset</button>
+      <button class="btn" id="bExport">Export enabled mods as a preset</button>
+      <button class="btn" id="bOpenDis">Open the disabled mods folder</button>
+      <button class="btn" id="bRescan">Rescan game folder</button>
+    </div><div class="btn-row"><button class="btn" data-close>Close</button></div>`, (m, close) => {
+    $("#bEnableAll", m).onclick = async () => { close(); result(await call("set_all_enabled", true), "All manual mods enabled."); await refreshMods(); renderModsTable(); };
+    $("#bDisableAll", m).onclick = async () => { close(); if (await confirmBox("Disable all manual mods?", "Their files move to <b>Temporarily Disabled Mods</b> in your game folder. You can enable them again at any time.", "Disable all")) { result(await call("set_all_enabled", false), "All manual mods disabled."); await refreshMods(); renderModsTable(); } };
+    $("#bExport", m).onclick = () => { close(); exportPreset(null)(); };
+    $("#bBackups", m).onclick = () => { close(); openBackups(); };
+    $("#bImport", m).onclick = async () => {
+      close();
+      const ow = await conflictChoice("Install a mod preset", "Pick the preset archive next. Its mods are added to your game folder.", "Choose preset");
+      if (ow !== null) startTask(await call("install_archive", "preset", ow), installDone);
+    };
+    $("#bOpenDis", m).onclick = async () => { close(); result(await call("open_game_folder", "Temporarily Disabled Mods")); };
+    $("#bRescan", m).onclick = async () => { close(); await refreshMods(true); renderModsTable(); toast("Rescanned.", "ok", 2000); };
+  });
+  $$("th[data-sort]", el).forEach((th) => (th.onclick = () => {
+    const k = th.dataset.sort; S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : 1 }; renderModsTable();
+  }));
+  $("#selAll").onchange = (e) => { visibleMods().forEach((m) => e.target.checked ? S.sel.add(m.key) : S.sel.delete(m.key)); renderModsTable(); };
+  renderModsTable();
+};
+function visibleMods() {
+  const f = S.filter, q = f.q.trim().toLowerCase();
+  let list = S.mods.filter((m) => {
+    if (f.state === "enabled" && !m.enabled) return false;
+    if (f.state === "disabled" && m.enabled) return false;
+    if (f.state === "updates" && !(m.update && m.update.update && m.enabled)) return false;
+    if (f.state === "unlinked" && (m.nexus_id || m.github || m.source === "mo2")) return false;
+    if (f.source !== "all" && m.source !== f.source) return false;
+    if (f.locs.size && !m.locations.some((l) => f.locs.has(l))) return false;
+    if (q) {
+      const hay = [m.name, m.nexus_id, m.link?.name, ...m.components.flatMap((c) => c.paths), ...(m.files || [])].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const k = S.sort.key, d = S.sort.dir;
+  const val = (m) => k === "size" ? m.size : k === "nexus" ? (m.update?.update ? 0 : m.nexus_id ? 1 : 2) : String(k === "source" ? SRC[m.source] : m[k] || "").toLowerCase();
+  return list.sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * d || a.name.localeCompare(b.name));
+}
+function renderModsTable() {
+  const tb = $("#modsTable tbody");
+  if (!tb) return;
+  const f = S.filter, all = S.mods;
+  const cnt = (fn) => all.filter(fn).length;
+  $("#segState").innerHTML = [["all", "All", all.length], ["enabled", "Enabled", cnt((m) => m.enabled)], ["disabled", "Disabled", cnt((m) => !m.enabled)],
+    ["updates", "Updates", cnt((m) => m.update?.update && m.enabled)], ["unlinked", "Not linked", cnt((m) => !m.nexus_id && !m.github && m.source !== "mo2")]].filter((x) => !["updates", "unlinked"].includes(x[0]) || x[2])
+    .map(([k, l, n]) => `<button data-k="${k}" class="${f.state === k ? "on" : ""}">${l}<em>${n}</em></button>`).join("");
+  const srcs = ["loose", "vortex", "mo2"].filter((s) => cnt((m) => m.source === s));
+  $("#segSource").innerHTML = srcs.length > 1 ? [["all", "Any source"], ...srcs.map((s) => [s, SRC[s]])]
+    .map(([k, l]) => `<button data-k="${k}" class="${f.source === k ? "on" : ""}">${l}</button>`).join("") : "";
+  $("#segSource").style.display = srcs.length > 1 ? "" : "none";
+  $$("#segState button").forEach((b) => (b.onclick = () => { f.state = b.dataset.k; renderModsTable(); }));
+  $$("#segSource button").forEach((b) => (b.onclick = () => { f.source = b.dataset.k; renderModsTable(); }));
+  const locs = Object.keys(LOC).filter((l) => all.some((m) => m.locations.includes(l)));
+  $("#locChips").innerHTML = locs.map((l) => `<button class="chip ${f.locs.has(l) ? "on" : ""}" data-l="${l}">${LOC[l]} · ${cnt((m) => m.locations.includes(l))}</button>`).join("");
+  $$("#locChips .chip").forEach((c) => (c.onclick = () => { f.locs.has(c.dataset.l) ? f.locs.delete(c.dataset.l) : f.locs.add(c.dataset.l); renderModsTable(); }));
+  $$("th[data-sort]").forEach((th) => th.classList.toggle("sorted", th.dataset.sort === S.sort.key));
+  if ($("#thName")) $("#thName").textContent = S.sort.key === "name" && S.sort.dir < 0 ? "Mod Name Z to A" : "Mod Name A to Z";
+
+  const list = visibleMods();
+  const locked = S.running?.game;
+  if (!list.length) {
+    tb.innerHTML = `<tr><td colspan="7"><div class="empty">${all.length ? "<b>No mods match these filters</b>Clear the search or pick another filter." :
+      "<b>No mods installed yet</b>Use Install mod to add one, or install mods with Vortex or MO2."}</div></td></tr>`;
+  } else {
+    tb.innerHTML = list.map((m) => {
+      const lock = locked || m.source === "vortex";
+      const nx = m.update?.update && m.enabled ? `<span class="upd">Update ${esc(m.update.latest)}</span>` :
+        m.nexus_id ? `<span class="muted">#${m.nexus_id}</span>${m.tracked ? `<span class="trk" title="Tracked on Nexus">◆</span>` : ""}${m.github ? ` <span class="tag">GitHub</span>` : ""}`
+          : m.github ? `<span class="tag" title="${esc(m.github.repo)}">GitHub</span>` : `<span class="muted">Not linked</span>`;
+      return `<tr class="row ${m.enabled ? "" : "off"} ${S.sel.has(m.key) ? "sel" : ""}" data-key="${esc(m.key)}">
+        <td><label class="check"><input type="checkbox" class="pick" ${S.sel.has(m.key) ? "checked" : ""} aria-label="Select ${esc(m.name)}"></label></td>
+        <td><input type="checkbox" class="switch ${m.partial ? "partial" : ""}" ${m.enabled ? "checked" : ""} ${lock ? "disabled" : ""}
+          title="${m.source === "vortex" ? "Managed by Vortex. Toggle it in Vortex." : locked ? "Close the game to change mods" : m.enabled ? "Disable" : "Enable"}" aria-label="Enable ${esc(m.name)}"></td>
+        <td><div class="name">${esc(m.name)}</div>${m.locations.map((l) => `<span class="tag">${LOC[l] || l}</span>`).join("")}</td>
+        <td><span class="src ${m.source}">${SRC[m.source]}</span></td>
+        <td>${esc(m.version || m.link?.version || "")}</td>
+        <td>${nx}</td>
+        <td class="num">${fmtSize(m.size)}</td></tr>`;
+    }).join("");
+  }
+  $$("tr.row", tb).forEach((tr) => {
+    const key = tr.dataset.key;
+    tr.onclick = (e) => {
+      if (e.target.closest(".switch, .check")) return;
+      if (e.ctrlKey || e.metaKey) { S.sel.has(key) ? S.sel.delete(key) : S.sel.add(key); renderModsTable(); return; }
+      openDrawer(key);
+    };
+    $(".pick", tr).onchange = (e) => { e.target.checked ? S.sel.add(key) : S.sel.delete(key); renderModsTable(); };
+    $(".switch", tr).onchange = async (e) => { await toggleMods([key], e.target.checked); };
+  });
+  const visKeys = list.map((m) => m.key);
+  $("#selAll").checked = visKeys.length > 0 && visKeys.every((k) => S.sel.has(k));
+  renderBulk();
+}
+async function toggleMods(keys, enable) {
+  const r = await call("set_mods_enabled", keys, enable);
+  result(r);
+  await refreshMods();
+  renderModsTable();
+  if (S.drawerKey) openDrawer(S.drawerKey);
+  poll();
+}
+function renderBulk() {
+  const host = $("#bulkHost");
+  if (!host) return;
+  const keys = [...S.sel].filter((k) => S.mods.some((m) => m.key === k));
+  if (!keys.length) { host.innerHTML = ""; return; }
+  host.innerHTML = `<div class="bulk"><b>${keys.length} selected</b>
+    <button class="btn" id="bkOn">Enable</button><button class="btn" id="bkOff">Disable</button>
+    <button class="btn" id="bkExp">Export as preset</button><button class="btn" id="bkId">Find on Nexus</button>
+    <button class="btn primary" id="bkClr">Clear selection</button></div>`;
+  $("#bkOn").onclick = () => toggleMods(keys, true);
+  $("#bkOff").onclick = () => toggleMods(keys, false);
+  $("#bkExp").onclick = exportPreset(keys);
+  if ($("#bkId")) $("#bkId").onclick = () => runIdentify(keys);
+  $("#bkClr").onclick = () => { S.sel.clear(); renderModsTable(); };
+}
+function exportPreset(keys) {
+  return async () => {
+    const fmts = await call("export_formats");
+    modal(`<h3>Export mod preset</h3><p class="muted">${keys ? plural(keys.length, "selected mod") : "All enabled mods"} will be packed with a list of what's inside. Install it on another PC with More actions → Install a mod preset.</p>
+      <div class="seg" id="fmtSeg">${fmts.map((f, i) => `<button data-f="${f}" class="${i ? "" : "on"}">.${f}</button>`).join("")}</div>
+      <div class="btn-row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="expGo">Choose where to save</button></div>`, (m, close) => {
+      let fmt = fmts[0];
+      $$("#fmtSeg button", m).forEach((b) => (b.onclick = () => { fmt = b.dataset.f; $$("#fmtSeg button", m).forEach((x) => x.classList.toggle("on", x === b)); }));
+      $("#expGo", m).onclick = async () => { close(); startTask(await call("export_preset", keys, fmt), (res) => toast(`Exported ${plural(res.mods, "mod")} (${res.files} files) to <b>${esc(res.path)}</b>.`, "ok", 8000)); };
+    });
+  };
+}
+async function identifyDone(res) {
+  toast(`Matched ${res.identified} of ${res.checked} manual mods to Nexus.`, "ok", 6000);
+  await refreshMods(true);
+  if (S.page === "mods") renderModsTable(); else go(S.page);
+}
+
+/* drawer */
+function closeDrawer() { const d = $("#drawer"); d.classList.remove("open"); d.setAttribute("aria-hidden", "true"); S.drawerKey = null; }
+function openDrawer(key) {
+  const m = S.mods.find((x) => x.key === key);
+  if (!m) return;
+  S.drawerKey = key;
+  const d = $("#drawer");
+  const locked = S.running?.game;
+  const signedIn = !!S.boot.nexus.user;
+  const files = m.source === "mo2" ? m.files : m.components.flatMap((c) => c.paths.map((p) => `${c.disabled ? "[disabled] " : ""}${p}${c.is_dir ? "/" : ""}`));
+  const how = { in_files: "found in the mod's own files", verified: "its files match the Nexus upload", download: "matched to " + (m.link?.archive || "a downloaded archive"),
+    name: "matched by name", confirmed: "confirmed by you", manual: "linked by you", installed: "installed by this tool", md5: "matched by file hash" }[m.link?.method] || "";
+  const canLink = m.source !== "vortex";
+  d.innerHTML = `<button class="close" aria-label="Close">×</button>
+    <header><h3>${esc(m.name)}</h3><span class="src ${m.source}">${SRC[m.source]}</span>
+      <span class="muted" style="margin-left:8px">${m.enabled ? "Enabled" : m.partial ? "Partly enabled" : "Disabled"}</span></header>
+    <div class="body">
+      <div id="dHero"></div>
+      ${m.source === "vortex" ? `<div class="note">Vortex deployed this mod. Enable, disable or update it in Vortex, otherwise Vortex reports the files as changed outside of it.</div>` : ""}
+      ${m.source === "mo2" ? `<div class="note">This mod lives in Mod Organizer 2 and only loads when you start the game through MO2. Toggling it here edits your MO2 profile (MO2 must be closed).</div>` : ""}
+      <div class="btn-row">
+        ${m.source !== "vortex" ? `<button class="btn ${m.enabled ? "" : "primary"}" id="dToggle" ${locked ? "disabled" : ""}>${m.enabled && !m.partial ? "Disable" : "Enable"}</button>` : ""}
+        <button class="btn" id="dOpen">Open folder</button>
+        ${m.update?.update && m.enabled ? `<button class="btn primary" id="dUpd">Update to ${esc(m.update.latest)}</button>` : (m.nexus_id && signedIn) || m.github ? `<button class="btn" id="dChk">Check for update</button>` : ""}
+      </div>
+      <h4>Details</h4>
+      <dl class="kv">
+        <dt>Installed version</dt><dd>${esc(m.version || m.link?.version || m.update?.installed || "Unknown")}${!m.version && !m.link?.version && m.update?.basis === "estimated" ? " <span class='muted'>(estimated from file dates)</span>" : ""}</dd>
+        ${m.update ? `<dt>Latest</dt><dd>${esc(m.update.latest || "Unknown")}${m.update.updated ? ` · ${fmtDate(m.update.updated)}` : ""}${m.update.source === "github" ? " (GitHub)" : ""}</dd>` : ""}
+        <dt>Installs into</dt><dd>${m.locations.map((l) => LOC[l]).join(", ") || "—"}</dd>
+        <dt>Size</dt><dd>${fmtSize(m.size) || "—"}</dd>
+      </dl>
+
+      ${canLink ? `<h4>Nexus Mods page</h4>
+      ${m.nexus_id ? `<div class="linkbox"><div><b>${esc(m.link?.name || m.update?.nexus_name || "Mod")}</b> <span class="muted">#${m.nexus_id}</span>
+          ${how ? `<div class="muted small">Linked because ${esc(how)}</div>` : ""}</div>
+          <div class="btn-row"><button class="btn small" id="dPage">Open page</button>${m.source === "loose" ? `<button class="btn small danger" id="dUnlink" title="Remove this link. Automatic matching won't pick this page again.">Not this mod</button>` : ""}</div></div>
+        ${signedIn ? `<label class="check"><input type="checkbox" id="dTrack" ${m.tracked ? "checked" : ""}>Track on Nexus</label>` : ""}` : `<p class="muted small" style="margin:0 0 8px">Not linked.</p>`}
+      <div class="inline-form"><input type="text" id="dLink" placeholder="Paste a Nexus mod URL or ID" aria-label="Nexus mod URL or ID"><button class="btn" id="dLinkBtn">${m.nexus_id ? "Relink" : "Link"}</button></div>
+      ${signedIn ? `<details id="dSearchWrap" ${m.nexus_id ? "" : "open"}><summary class="muted small">Search Nexus</summary><div id="dSearch"></div></details>` : ""}
+      ${!m.nexus_id && m.source === "loose" ? `<p class="muted small">Or <button class="link" id="dIdent">find it automatically</button>.</p>` : ""}
+
+      <h4>GitHub</h4>
+      ${m.github ? `<div class="linkbox"><div><b>${esc(m.github.repo)}</b><div class="muted small" id="dGhInfo">${m.github.method === "in_files" ? "Linked because it's mentioned in the mod's files" : "Linked by you"}</div></div>
+          <div class="btn-row"><button class="btn small" data-url="https://github.com/${esc(m.github.repo)}/releases">Releases</button><button class="btn small danger" id="dGhUnlink">Unlink</button></div></div>`
+        : `<div class="inline-form"><input type="text" id="dGh" placeholder="For mods released on GitHub: paste the repository URL" aria-label="GitHub repository URL"><button class="btn" id="dGhBtn">Link</button></div>`}` : ""}
+
+      <h4>Files (${files.length})</h4>
+      <div class="files">${esc(files.join("\n"))}</div>
+    </div>`;
+  d.classList.add("open");
+  d.setAttribute("aria-hidden", "false");
+  wireCommon(d);
+  const refresh = async () => { await refreshMods(); if (S.page === "mods") renderModsTable(); if (S.page === "overview") renderUpdatesPanel(); openDrawer(key); poll(); };
+  $(".close", d).onclick = closeDrawer;
+  $("#dOpen").onclick = async () => result(await call("open_mod_folder", key));
+  if ($("#dToggle")) $("#dToggle").onclick = () => toggleMods([key], !(m.enabled && !m.partial));
+  if ($("#dPage")) $("#dPage").onclick = () => call("open_url", `https://www.nexusmods.com/cyberpunk2077/mods/${m.nexus_id}`);
+  if ($("#dUpd")) $("#dUpd").onclick = () => doUpdate(key, refresh);
+  if ($("#dChk")) $("#dChk").onclick = async () => startTask(await call("nexus_check_updates", [key]), refresh);
+  if ($("#dUnlink")) $("#dUnlink").onclick = async () => { if (result(await call("nexus_unlink", key), "Link removed.")) refresh(); };
+  if ($("#dLinkBtn")) $("#dLinkBtn").onclick = async () => {
+    const r = await call("nexus_link", key, $("#dLink").value);
+    if (result(r, "Linked to Nexus.")) { refresh(); const chk = await call("nexus_check_updates", [key]); if (chk.ok) startTask(chk, refresh, true); }
+  };
+  if ($("#dLink")) $("#dLink").onkeydown = (e) => { if (e.key === "Enter") $("#dLinkBtn").click(); };
+  if ($("#dSearch")) {
+    const mount = () => mountLinkSearch($("#dSearch"), key, m.nexus_id ? "" : niceName(m.name), refresh);
+    if ($("#dSearchWrap").open) mount(); else $("#dSearchWrap").addEventListener("toggle", mount, { once: true });
+  }
+  if ($("#dTrack")) $("#dTrack").onchange = async (e) => { if (result(await call("nexus_track", m.nexus_id, e.target.checked), e.target.checked ? "Tracking on Nexus." : "No longer tracked.")) { await refreshMods(); if (S.page === "mods") renderModsTable(); } };
+  if ($("#dIdent")) $("#dIdent").onclick = () => runIdentify([key]);
+  if ($("#dGhBtn")) $("#dGhBtn").onclick = async () => {
+    const r = await call("github_link", key, $("#dGh").value);
+    if (result(r, `Linked to ${r.repo} on GitHub.`)) { await refresh(); const chk = await call("nexus_check_updates", [key]); if (chk.ok) startTask(chk, refresh, true); }
+  };
+  if ($("#dGhUnlink")) $("#dGhUnlink").onclick = async () => { if (result(await call("github_unlink", key), "GitHub link removed.")) refresh(); };
+  if (m.nexus_id || m.github) loadHero(key);
+}
+async function loadHero(key) {
+  const r = await call("mod_details", key);
+  if (S.drawerKey !== key || !r.ok) return;
+  const host = $("#dHero"), n = r.nexus, g = r.github;
+  if (n && n.name) {
+    host.innerHTML = `<div class="hero">${n.picture_url ? `<img src="${esc(n.picture_url)}" alt="" class="${n.contains_adult_content ? "adult" : ""}">` : ""}
+      <div class="hero-body"><b>${esc(n.name)}</b><span class="muted small">by ${esc(n.author || "unknown")} · v${esc(n.version || "?")}${n.endorsement_count != null ? ` · ${Number(n.endorsement_count).toLocaleString()} endorsements` : ""}${n.updated_timestamp ? ` · updated ${fmtDate(n.updated_timestamp)}` : ""}</span>
+      <p>${esc((n.summary || "").replace(/<[^>]+>/g, ""))}</p>
+      <button class="link small" id="dImgs">See all images on Nexus</button></div></div>`;
+    $("#dImgs").onclick = () => call("open_url", `https://www.nexusmods.com/cyberpunk2077/mods/${n.mod_id}?tab=images`);
+  } else if (n && n.error) {
+    host.innerHTML = `<p class="muted small">${esc(n.error)}</p>`;
+  }
+  if (g && $("#dGhInfo")) {
+    $("#dGhInfo").textContent = g.error ? g.error : [g.description, g.latest ? `latest release ${g.latest}${g.latest_date ? " · " + fmtDate(g.latest_date) : ""}` : "no releases", g.stars != null ? `★ ${g.stars}` : ""].filter(Boolean).join(" · ");
+  }
+}
+
+/* ------------------------------------------------------------------ CORE */
+RENDER.core = async (el) => {
+  const r = await call("get_core");
+  if (!result(r)) return;
+  const manualOk = ["EquipmentEx", "Redscript", "Cyber Engine Tweaks"];
+  el.innerHTML = `<div class="core-list">${r.core.map((c) => `
+    <div class="core ${c.installed ? "" : c.disabled ? "disabledc missing" : "missing"}">
+      <h3>${esc(c.name)}</h3><span class="state">${c.installed ? "Installed" : c.disabled ? "Disabled" : "Missing"}</span>
+      <p>${esc(c.desc)}</p>
+      <div class="ver">${esc(c.version || (c.installed ? "Version unknown" : "—"))}${c.version_source === "manual" ? "<small>entered by you</small>" : ""}
+        ${c.update?.update ? `<small style="color:var(--yellow)">${esc(c.update.latest)} available</small>` : ""}</div>
+      <div></div>
+      <div class="acts">
+        ${c.update?.update ? `<button class="btn small primary" data-coreupd="${esc(c.name)}">Update to ${esc(c.update.latest)}</button>` : ""}
+        <button class="btn small ${c.installed ? "" : "primary"}" data-url="https://www.nexusmods.com/cyberpunk2077/mods/${c.nexus_id}${c.installed ? "" : "?tab=files"}">${c.installed ? "Nexus page" : "Download"}</button>
+        ${c.installed && manualOk.includes(c.name) && c.version_source !== "file" ? `<button class="btn small" data-ver="${esc(c.name)}">Set version</button>` : ""}
+      </div>
+    </div>`).join("")}</div>
+    <div class="panel" style="margin-top:18px"><h2>Disable frameworks for testing</h2>
+      <p class="muted" style="max-width:75ch;margin-top:-4px">Moving the frameworks out runs the game close to vanilla, which helps you tell whether a crash comes from mods. Most mods stop working until you enable them again.</p>
+      <div class="btn-row"><button class="btn danger" id="coreOff">Disable frameworks</button><button class="btn" id="coreOn">Enable frameworks</button></div></div>`;
+  wireCommon(el);
+  $$("[data-coreupd]", el).forEach((b) => (b.onclick = () => doUpdate(`core:${b.dataset.coreupd}`, () => RENDER.core(el))));
+  $$("[data-ver]", el).forEach((b) => (b.onclick = () => modal(`<h3>${esc(b.dataset.ver)} version</h3>
+    <p class="muted">This version can't be read from the files, so it comes from you. Find it on the mod's Nexus page or in its download name.</p>
+    <input type="text" id="verIn" style="width:100%" placeholder="For example 1.2.7">
+    <div class="btn-row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="verOk">Save version</button></div>`, (m, close) => {
+    $("#verOk", m).onclick = async () => { await call("set_manual_version", b.dataset.ver, $("#verIn", m).value); close(); RENDER.core(el); };
+  })));
+  $("#coreOff").onclick = async () => {
+    if (await confirmBox("Disable core frameworks?", "RED4ext, Redscript, CET, ArchiveXL, TweakXL, Codeware and EquipmentEx move to <b>Temporarily Disabled Mods</b>.", "Disable frameworks", true)) {
+      result(await call("set_core_enabled", false), "Frameworks disabled."); RENDER.core(el); poll();
+    }
+  };
+  $("#coreOn").onclick = async () => { result(await call("set_core_enabled", true), "Frameworks enabled."); RENDER.core(el); poll(); };
+};
+
+/* ------------------------------------------------------------------ LOGS */
+RENDER.logs = async (el) => {
+  const r = await call("get_logs");
+  if (!result(r)) return;
+  el.classList.add("fill");
+  if (!r.logs.length) { el.innerHTML = `<div class="panel"><div class="empty"><b>No logs yet</b>Logs appear after you launch the game with the frameworks installed.</div></div>`; return; }
+  if (!S.logSel || !r.logs.some((l) => l.name === S.logSel)) S.logSel = (r.logs.find((l) => l.errors) || r.logs[0]).name;
+  el.innerHTML = `<div class="logs"><div class="loglist">${r.logs.map((l) => `<button data-n="${esc(l.name)}" class="${l.name === S.logSel ? "on" : ""}">
+      ${esc(l.name)}<small>${esc(l.file)} · ${new Date(l.modified * 1000).toLocaleString()}</small>
+      <small>${l.errors ? `<span class="e">${plural(l.errors, "error")}</span> ` : ""}${l.warnings ? `<span class="w">${plural(l.warnings, "warning")}</span>` : ""}${!l.errors && !l.warnings ? "Clean" : ""}</small></button>`).join("")}</div>
+    <div class="viewer"><div class="vt"><b id="lvName"></b><span class="grow" style="flex:1"></span>
+      <label class="check"><input type="checkbox" id="errOnly" ${S.errorsOnly ? "checked" : ""}>Only errors and warnings</label>
+      <button class="btn small" id="lvCopy">Copy</button><button class="btn small" id="lvOpen">Open in editor</button></div><pre id="lvText"></pre></div></div>`;
+  $$(".loglist button", el).forEach((b) => (b.onclick = () => { S.logSel = b.dataset.n; RENDER.logs(el); }));
+  $("#errOnly").onchange = (e) => { S.errorsOnly = e.target.checked; showLog(); };
+  let current = null;
+  async function showLog() {
+    current = current || await call("read_log", S.logSel);
+    if (!result(current)) return;
+    $("#lvName").textContent = current.name;
+    const lines = S.errorsOnly ? current.lines.filter((l) => l.k) : current.lines;
+    const pre = $("#lvText");
+    pre.innerHTML = lines.length ? lines.map((l) => `<div class="${l.k || ""}">${esc(l.t) || " "}</div>`).join("") : `<div class="muted">No errors or warnings in this log.</div>`;
+    const first = $("div.error", pre); if (first && !S.errorsOnly) first.scrollIntoView({ block: "center" });
+  }
+  $("#lvOpen").onclick = () => current && call("open_path", current.path);
+  $("#lvCopy").onclick = () => current && navigator.clipboard.writeText(current.lines.map((l) => l.t).join("\n")).then(() => toast("Log copied.", "ok", 2000));
+  showLog();
+};
+
+/* ------------------------------------------------------------------ NEXUS */
+RENDER.nexus = async (el) => {
+  const st = await call("nexus_status");
+  const u = st.user;
+  S.boot.nexus.user = u || null;
+  renderUserChip();
+  if (!u) {
+    el.innerHTML = `<div class="grid cols-2"><div class="panel"><h2>Connect your Nexus Mods account</h2>
+      ${st.error ? `<div class="note warn">${esc(st.error)}</div>` : ""}
+      ${S.boot.nexus.sso ? `<p><button class="btn primary" id="sso">Log in with Nexus Mods</button></p><p class="muted">Or use a personal API key instead:</p>` : ""}
+      <p class="muted" style="max-width:62ch">Open your Nexus API keys page, copy your <b>Personal API Key</b> and paste it here. It's encrypted with your Windows account and only used to talk to Nexus.</p>
+      <div class="inline-form"><input type="password" id="apikey" placeholder="Personal API key" aria-label="Nexus API key" autocomplete="off"><button class="btn primary" id="keyGo">Connect</button></div>
+      <p><button class="link" id="keyPage">Open my Nexus API keys page</button></p></div>
+      <div class="panel hatch"><h2>What connecting gives you</h2><ul class="alerts">
+        <li><span class="dot"></span><span><b>Identify manual installs.</b> Mods you dropped into the game folder are matched to their Nexus pages by file hash.</span></li>
+        <li><span class="dot"></span><span><b>Update checks.</b> See which mods and frameworks have newer versions.</span></li>
+        <li><span class="dot"></span><span><b>Tracking.</b> Track everything you have installed so Nexus notifies you about updates.</span></li>
+        <li><span class="dot"></span><span><b>One-click updates</b> for manual installs with Nexus Premium. Free accounts go to the Files tab.</span></li></ul></div></div>`;
+    $("#keyPage").onclick = () => call("open_url", S.boot.nexus.api_key_page);
+    $("#keyGo").onclick = async () => {
+      const r = await call("nexus_login_key", $("#apikey").value);
+      if (result(r, `Connected as ${r.user?.name}.`)) { S.boot.nexus.user = r.user; renderUserChip(); RENDER.nexus(el); }
+    };
+    $("#apikey").onkeydown = (e) => { if (e.key === "Enter") $("#keyGo").click(); };
+    if ($("#sso")) $("#sso").onclick = async () => startTask(await call("nexus_sso"), (res) => { S.boot.nexus.user = res.user; RENDER.nexus(el); });
+    return;
+  }
+  await refreshMods();
+  const ups = S.mods.filter((m) => m.update?.update);
+  const unlinked = S.mods.filter((m) => m.source === "loose" && !m.nexus_id && !m.github && (S.boot.settings.queue_include_disabled || m.enabled)).length;
+  const checked = S.mods.some((m) => m.update);
+  el.innerHTML = `<div class="grid cols-2">
+    <div class="panel"><div class="user">${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : ""}<div><b>${esc(u.name)}</b>
+      ${u.is_premium ? `<span class="pill">Premium</span>` : `<span class="muted">Free account</span>`}</div>
+      <button class="btn small" id="logout" style="margin-left:auto">Disconnect</button></div>
+      ${st.rate?.daily != null ? `<p class="muted" style="margin:12px 0 0">API requests left today: ${st.rate.daily}</p>` : ""}</div>
+    <div class="panel"><h2>Sync</h2><div class="btn-row">
+      <button class="btn primary" id="chk">Check for updates</button>
+      <button class="btn" id="ident" ${unlinked ? "" : "disabled"}>Find ${plural(unlinked, "unlinked mod")} on Nexus</button>
+      <button class="btn" id="trackAll">Track all installed mods</button></div></div></div>
+    <div class="panel" style="margin-top:18px"><h2>Updates <span class="hint">${checked ? `${ups.length} available` : "Not checked yet"}</span></h2>
+      ${ups.length ? `<ul class="updates">${ups.map((m) => `<li>${m.update.picture ? `<img src="${esc(m.update.picture)}" alt="">` : `<span></span>`}
+        <div><b>${esc(m.name)}</b> <span class="src ${m.source}">${SRC[m.source]}</span><div class="v">${esc(m.update.installed || "?")} → <b>${esc(m.update.latest)}</b>${m.update.updated ? ` · ${fmtDate(m.update.updated)}` : ""}</div></div>
+        <button class="btn small primary" data-upd="${esc(m.key)}">${m.source === "loose" && u.is_premium ? "Update" : "Get update"}</button></li>`).join("")}</ul>`
+      : `<p class="muted">${checked ? "Everything linked to Nexus is up to date." : "Check for updates to compare your installed versions with Nexus."}</p>`}
+    </div>
+    <div class="panel" style="margin-top:18px" id="sugPanel" hidden></div>
+    <div class="panel" style="margin-top:18px"><h2>Where downloads are matched from</h2>
+      <p class="muted" style="margin-top:-4px;max-width:80ch">Mods are matched to the archives you downloaded from Nexus. The file names contain the mod ID and version, and the contents are checked against what's installed. Keep your downloads around and matching is exact.</p>
+      <div id="dlFolders"></div><button class="btn small" id="dlAdd" style="margin-top:10px">Add a folder</button></div>
+    <div class="panel" style="margin-top:18px" id="queuePanel"></div>
+    <div class="panel" style="margin-top:18px"><h2>Tracking</h2>
+      <label class="check"><input type="checkbox" id="autoTrack" ${S.boot.settings.auto_track ? "checked" : ""}>Track mods on Nexus automatically when they're linked</label>
+      <div id="tracked" class="muted" style="margin-top:10px">Loading…</div></div>`;
+  $("#logout").onclick = async () => { await call("nexus_logout"); S.boot.nexus.user = null; renderUserChip(); RENDER.nexus(el); };
+  $("#chk").onclick = runUpdateCheck;
+  $("#ident").onclick = () => runIdentify(null);
+  $("#trackAll").onclick = async () => startTask(await call("nexus_track_installed"), (res) => toast(`Now tracking ${res.tracked} more mod${res.tracked === 1 ? "" : "s"}.`, "ok"));
+  $$("[data-upd]", el).forEach((b) => (b.onclick = async () => {
+    const r = await call("nexus_update", b.dataset.upd);
+    if (r.task) startTask(r, () => { toast("Mod updated.", "ok"); RENDER.nexus(el); }); else result(r);
+  }));
+  renderSuggestions();
+  renderDlFolders();
+  $("#dlAdd").onclick = async () => { await call("add_download_folder"); renderDlFolders(); };
+  $("#autoTrack").onchange = async (e) => { const r = await call("save_settings", { auto_track: e.target.checked }); if (r.ok) S.boot.settings = r.settings; };
+  renderQueue();
+  renderTracked();
+};
+
+async function renderTracked() {
+  const host = $("#tracked"); if (!host) return;
+  const t = await call("nexus_tracked");
+  if (!t.ok) { host.textContent = t.error; return; }
+  const notTr = t.not_tracked, tr = t.tracked;
+  host.className = "";
+  host.innerHTML = `${notTr.length ? `<div class="upd-strip" style="margin-bottom:8px"><p>${plural(notTr.length, "linked mod")} ${notTr.length === 1 ? "isn't" : "aren't"} tracked on Nexus yet.</p>
+      <button class="btn small primary" id="trkAll">Track ${notTr.length === 1 ? "it" : "all " + notTr.length}</button></div>` : `<p class="muted" style="margin:0 0 8px">Every linked mod is tracked.</p>`}
+    <details><summary class="muted" style="cursor:pointer">Tracked on Nexus (${tr.length})</summary>
+    ${tr.length ? `<table class="table"><tbody>${tr.map((x) => `<tr><td style="width:90px" class="muted">#${x.mod_id}</td>
+      <td>${x.name ? esc(x.name) : `<span class="muted">Mod ${x.mod_id}</span>`}${x.installed ? "" : ` <span class="tag">Not installed</span>`}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn small" data-url="${esc(x.url)}">Open</button> <button class="btn small" data-untrack="${x.mod_id}">Untrack</button></td></tr>`).join("")}</tbody></table>`
+      : `<p class="muted">You aren't tracking any Cyberpunk 2077 mods yet.</p>`}</details>`;
+  wireCommon(host);
+  if ($("#trkAll")) $("#trkAll").onclick = async () => startTask(await call("nexus_track_installed"), (res) => { toast(`Now tracking ${plural(res.tracked, "more mod")}.`, "ok"); refreshMods().then(renderTracked); });
+  $$("[data-untrack]", host).forEach((b) => (b.onclick = async () => { if (result(await call("nexus_track", +b.dataset.untrack, false))) b.closest("tr").remove(); }));
+}
+async function renderQueue() {
+  const host = $("#queuePanel"); if (!host) return;
+  const sugKeys = new Set(((await call("get_suggestions")).suggestions || []).map((x) => x.key));
+  const showDisabled = !!S.boot.settings.queue_include_disabled;
+  const q = S.mods.filter((m) => m.source === "loose" && !m.nexus_id && !m.github && !sugKeys.has(m.key) && (showDisabled || m.enabled));
+  if (!q.length) { host.hidden = true; return; }
+  host.hidden = false;
+  const PAGE = 12;
+  host.innerHTML = `<h2>Link queue <span class="hint">${plural(q.length, "mod")} not linked</span></h2>
+    <p class="muted" style="margin-top:-4px;max-width:80ch">These couldn't be matched automatically. Search Nexus or paste the mod's URL. Each mod you link is checked for updates${S.boot.settings.auto_track ? " and tracked" : ""}.</p>
+    <div id="qRows">${q.slice(0, PAGE).map((m) => `<div class="queue-row" data-key="${esc(m.key)}"><div><button class="link plain qname" title="Show files and details"><b>${esc(m.name)}</b></button> ${m.locations.map((l) => `<span class="tag">${LOC[l] || l}</span>`).join("")}${m.enabled ? "" : ` <span class="tag">Disabled</span>`}</div>
+      <div class="btn-row"><button class="btn small" data-find>Find on Nexus</button><button class="btn small" data-files>Files</button></div><div class="qs"></div></div>`).join("")}</div>
+    ${q.length > PAGE ? `<p class="muted">Showing ${PAGE} of ${q.length}. Linked mods drop off the list. Filter the Mods page by <button class="link" id="qAll">Not linked</button> to see them all.</p>` : ""}`;
+  $$(".queue-row", host).forEach((row) => {
+    const key = row.dataset.key, m = S.mods.find((x) => x.key === key);
+    $("[data-find]", row).onclick = (e) => {
+      const host = $(".qs", row), btn = e.currentTarget;
+      if (host.childElementCount) { host.innerHTML = ""; btn.textContent = "Find on Nexus"; btn.setAttribute("aria-expanded", "false"); return; }
+      mountLinkSearch(host, key, niceName(m.name), () => renderQueue());
+      btn.textContent = "Close search"; btn.setAttribute("aria-expanded", "true");
+    };
+    $("[data-files]", row).onclick = () => openDrawer(key);
+    $(".qname", row).onclick = () => openDrawer(key);
+  });
+  if ($("#qAll")) $("#qAll").onclick = async () => { S.filter.state = "unlinked"; await go("mods"); };
+}
+async function renderDlFolders() {
+  const r = await call("get_download_folders");
+  const host = $("#dlFolders"); if (!host) return;
+  host.innerHTML = r.folders.length ? r.folders.map((f) => `<div class="field" style="grid-template-columns:1fr auto;padding:6px 0"><span class="path">${esc(f)}</span>
+    ${r.extra.includes(f) ? `<button class="link" data-rmdl="${esc(f)}">Remove</button>` : `<span class="muted">found automatically</span>`}</div>`).join("") : `<p class="muted">No download folders found.</p>`;
+  $$("[data-rmdl]", host).forEach((b) => (b.onclick = async () => { await call("remove_download_folder", b.dataset.rmdl); renderDlFolders(); }));
+}
+async function renderSuggestions() {
+  const host = $("#sugPanel"); if (!host) return;
+  const r = await call("get_suggestions");
+  const list = r.suggestions || [];
+  if (!list.length) { host.hidden = true; return; }
+  host.hidden = false;
+  host.innerHTML = `<h2>Review possible matches <span class="hint">${plural(list.length, "mod")}</span></h2>
+    <p class="muted" style="margin-top:-4px">These names are close but not exact. Pick the right Nexus mod, or skip it.</p>
+    <div class="upd-rows sug">${list.map((sg) => `<div class="n">${esc(sg.local)}</div>
+      <div><select data-sug="${esc(sg.key)}">${sg.options.map((o) => `<option value="${o.mod_id}">${esc(o.name)} (#${o.mod_id})</option>`).join("")}</select></div>
+      <div class="d"><button class="link" data-view="${esc(sg.key)}">View</button></div>
+      <div class="btn-row" style="flex-wrap:nowrap"><button class="btn small primary" data-ok="${esc(sg.key)}">Link</button><button class="btn small" data-no="${esc(sg.key)}">Not it</button></div>`).join("")}</div>`;
+  const sel = (k) => $(`select[data-sug="${CSS.escape(k)}"]`, host);
+  $$("[data-view]", host).forEach((b) => (b.onclick = () => call("open_url", `https://www.nexusmods.com/cyberpunk2077/mods/${sel(b.dataset.view).value}`)));
+  $$("[data-ok]", host).forEach((b) => (b.onclick = async () => { await call("resolve_suggestion", b.dataset.ok, +sel(b.dataset.ok).value); await refreshMods(); renderSuggestions(); }));
+  $$("[data-no]", host).forEach((b) => (b.onclick = async () => { await call("resolve_suggestion", b.dataset.no, null); renderSuggestions(); renderQueue(); }));
+}
+
+/* ------------------------------------------------------------------ BROWSE */
+S.browse = { kind: "trending", term: "" };
+RENDER.browse = async (el) => {
+  if (!S.boot.nexus.user) {
+    el.innerHTML = `<div class="panel"><div class="empty"><b>Connect Nexus Mods to browse</b>Browsing uses your Nexus account to load mods and files.<br><br>
+      <button class="btn primary" data-go="nexus">Connect Nexus Mods</button> <button class="btn" id="bwSite">Open the Nexus website in your browser</button></div></div>`;
+    wireCommon(el);
+    $("#bwSite").onclick = () => call("open_url", "https://www.nexusmods.com/games/cyberpunk2077/mods");
+    return;
+  }
+  const b = S.browse;
+  el.innerHTML = `<div class="toolbar">
+      <div class="seg" id="bwKind">${[["trending", "Trending"], ["latest_added", "New"], ["latest_updated", "Recently updated"]]
+        .map(([k, l]) => `<button data-k="${k}" class="${b.kind === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="search"><input type="search" id="bwQ" placeholder="Search Cyberpunk 2077 mods, or paste a Nexus URL" value="${esc(b.term)}" aria-label="Search Nexus"></div>
+      <button class="btn" id="bwSite" title="Opens nexusmods.com in your browser. Mod Manager Download links still install here when that's turned on in Settings.">Open full Nexus site</button>
+    </div>
+    <div id="bwGrid" class="cards"><p class="muted">Loading…</p></div>
+    <div class="more-row"><button class="btn" id="bwMore" hidden>+ Load more</button><span class="muted small" id="bwNote"></span></div>`;
+  $$("#bwKind button", el).forEach((x) => (x.onclick = () => { b.kind = x.dataset.k; b.term = ""; RENDER.browse(el); }));
+  $("#bwSite").onclick = () => call("open_url", "https://www.nexusmods.com/games/cyberpunk2077/mods");
+  let t = null;
+  $("#bwQ").oninput = (e) => { clearTimeout(t); t = setTimeout(() => { b.term = e.target.value.trim(); b.kind = b.term ? "search" : "trending"; loadCards(); }, 450); };
+  $("#bwQ").onkeydown = (e) => { if (e.key === "Enter") { clearTimeout(t); b.term = e.target.value.trim(); b.kind = b.term ? "search" : "trending"; loadCards(); } };
+  loadCards();
+};
+const PAGE_SIZE = 12;
+function cardHtml(m) {
+  return `<button class="card" data-id="${m.mod_id}">
+      <span class="thumb">${m.picture_url ? `<img src="${esc(m.picture_url)}" alt="" loading="lazy" class="${m.contains_adult_content ? "adult" : ""}">` : ""}
+        ${m.installed_key ? `<span class="badge">Installed</span>` : ""}</span>
+      <span class="cbody"><b>${esc(m.name)}</b><span class="muted small">by ${esc(m.author || "unknown")}${m.version ? ` · v${esc(m.version)}` : ""}</span>
+        <span class="sum">${esc((m.summary || "").replace(/<[^>]+>/g, ""))}</span>
+        <span class="meta small">♥ ${Number(m.endorsement_count || 0).toLocaleString()}${m.updated_timestamp ? ` · ${fmtDate(m.updated_timestamp)}` : ""}</span></span></button>`;
+}
+async function loadCards(append = false) {
+  const grid = $("#bwGrid"), b = S.browse, more = $("#bwMore"), note = $("#bwNote");
+  if (!grid) return;
+  $$("#bwKind button").forEach((x) => x.classList.toggle("on", x.dataset.k === b.kind));
+  if (!append) {
+    b.offset = 0; b.seen = new Set();
+    grid.innerHTML = `<p class="muted">${b.kind === "search" ? `Searching for “${esc(b.term)}”…` : "Loading…"}</p>`;
+  }
+  more.hidden = true; note.textContent = append ? "Loading…" : "";
+  const r = await call("nexus_browse", b.kind, b.term, b.offset, PAGE_SIZE);
+  if (!$("#bwGrid")) return;
+  note.textContent = "";
+  if (!r.ok) { if (!append) grid.innerHTML = `<p class="muted">${esc(r.error)}</p>`; else note.textContent = r.error; return; }
+  const fresh = r.mods.filter((m) => !b.seen.has(m.mod_id));
+  fresh.forEach((m) => b.seen.add(m.mod_id));
+  if (!append) grid.innerHTML = "";
+  if (!append && !fresh.length) { grid.innerHTML = `<div class="empty"><b>No mods found</b>Try fewer or different words.</div>`; return; }
+  grid.insertAdjacentHTML("beforeend", fresh.map(cardHtml).join(""));
+  $$(".card:not([data-wired])", grid).forEach((c) => { c.dataset.wired = 1; c.onclick = () => openBrowseDrawer(+c.dataset.id); });
+  b.offset += PAGE_SIZE;
+  more.hidden = !r.more;
+  more.onclick = () => loadCards(true);
+  if (!r.more && b.kind === "trending") note.textContent = "Nexus lists the top trending mods only. Try New or Recently updated for more.";
+}
+async function openBrowseDrawer(id) {
+  S.drawerKey = `browse:${id}`;
+  const d = $("#drawer");
+  d.innerHTML = `<button class="close" aria-label="Close">×</button><header><h3>Loading…</h3></header>`;
+  d.classList.add("open"); d.setAttribute("aria-hidden", "false");
+  $(".close", d).onclick = closeDrawer;
+  const r = await call("nexus_mod_page", id);
+  if (S.drawerKey !== `browse:${id}`) return;
+  if (!r.ok) { $("header h3", d).textContent = r.error; return; }
+  const m = r.mod;
+  d.innerHTML = `<button class="close" aria-label="Close">×</button>
+    <header><h3>${esc(m.name)}</h3><span class="muted">by ${esc(m.author || "unknown")}</span>${r.installed_key ? ` <span class="src loose" style="margin-left:6px">Installed</span>` : ""}</header>
+    <div class="body">
+      <div class="hero">${m.picture_url ? `<img src="${esc(m.picture_url)}" alt="" class="${m.contains_adult_content ? "adult" : ""}">` : ""}
+        <div class="hero-body"><span class="muted small">v${esc(m.version || "?")} · ♥ ${Number(m.endorsement_count || 0).toLocaleString()}${m.updated_timestamp ? ` · updated ${fmtDate(m.updated_timestamp)}` : ""}</span>
+        <p>${esc((m.summary || "").replace(/<[^>]+>/g, ""))}</p></div></div>
+      <div class="btn-row"><button class="btn" id="bPage">Open on Nexus</button>
+        <button class="btn" id="bImgs" title="Nexus's API only provides the main picture. This opens the mod's full image gallery.">All images</button>
+        ${r.installed_key ? `<button class="btn" id="bLocal">Show installed mod</button>` : ""}
+        <label class="check" style="margin-left:6px"><input type="checkbox" id="bTrack">Track</label></div>
+      <h4>Files</h4>
+      ${!r.premium && !r.nxm ? `<div class="note">Free accounts install through Nexus's Mod Manager Download button. Turn on <b>Install "Mod Manager Download" files here</b> in Settings and Install will open the file on Nexus for one click.</div>` : ""}
+      <div class="flist">${r.files.map((f) => `<div class="frow"><div><b>${esc(f.name)}</b> <span class="tag">${esc((f.category || "").toLowerCase())}</span>
+          <div class="muted small">v${esc(f.version || "?")}${f.size_kb ? ` · ${fmtSize(f.size_kb * 1024)}` : ""}${f.uploaded ? ` · ${fmtDate(f.uploaded)}` : ""}</div>
+          ${f.description ? `<div class="muted small fdesc">${esc(f.description)}</div>` : ""}</div>
+        <button class="btn small ${f.category === "MAIN" ? "primary" : ""}" data-fid="${f.file_id}">${r.premium ? "Install" : "Get"}</button></div>`).join("") || `<p class="muted">No downloadable files.</p>`}</div>
+    </div>`;
+  $(".close", d).onclick = closeDrawer;
+  $("#bPage").onclick = () => call("open_url", m.url);
+  $("#bImgs").onclick = () => call("open_url", m.url + "?tab=images");
+  if ($("#bLocal")) $("#bLocal").onclick = async () => { await go("mods"); openDrawer(r.installed_key); };
+  const tr = $("#bTrack");
+  tr.checked = !!S.mods.find((x) => x.nexus_id === id && x.tracked);
+  tr.onchange = async (e) => result(await call("nexus_track", id, e.target.checked), e.target.checked ? "Tracking on Nexus." : "No longer tracked.");
+  $$("[data-fid]", d).forEach((b) => (b.onclick = async () => {
+    const res = await call("nexus_install", id, +b.dataset.fid);
+    if (res.task) return startTask(res, async (out) => { toast(`Installed <b>${esc(out.name)}</b>${out.version ? ` ${esc(out.version)}` : ""}.`, "ok", 7000); await refreshMods(true); poll(); openBrowseDrawer(id); });
+    if (res.needs_nxm) return doUpdateNxmPrompt(res.note);
+    result(res);
+  }));
+}
+function doUpdateNxmPrompt(note) {
+  modal(`<h3>Install from the website</h3><p>${esc(note || "")}</p>
+    <p class="muted">Turn on Mod Manager Download handling and the button on Nexus installs the file here. Links for other games still go to the app that handled them before.</p>
+    <div class="btn-row"><button class="btn" data-close>Not now</button><button class="btn primary" id="nxmOn2">Turn it on</button></div>`,
+    (mm, close) => { $("#nxmOn2", mm).onclick = async () => { close(); result(await call("nxm_set", true), "Mod Manager Downloads will install here."); }; });
+}
+
+/* ------------------------------------------------------------------ SETTINGS */
+RENDER.settings = async (el) => {
+  const boot = await call("bootstrap");
+  S.boot = boot;
+  const s = boot.settings, g = boot.game, mg = boot.managers;
+  const cands = (await call("detect_game_dirs")) || [];
+  const mo2 = mg.mo2;
+  const nx = await call("nxm_status");
+  el.innerHTML = `<div class="panel"><h2>Game</h2>
+      <div class="field"><label>Game folder</label><div class="stack"><span class="path">${g.valid ? esc(g.dir) : "Not set"}</span>
+        <div class="btn-row"><button class="btn" id="pickDir">Change folder</button>${g.valid ? `<button class="btn" id="openDir">Open folder</button>` : ""}</div>
+        ${cands.filter((c) => c.path.toLowerCase() !== (g.dir || "").toLowerCase()).map((c) => `<button class="link" data-cand="${esc(c.path)}">Use the ${esc(c.store)} install at ${esc(c.path)}</button>`).join("")}</div></div>
+      <div class="field"><label for="launchVia">Launch game through</label><select id="launchVia">
+        <option value="auto">Cyberpunk2077.exe (through MO2 when you use MO2)</option>
+        <option value="exe">Cyberpunk2077.exe, always</option><option value="store">Steam client</option>${mo2 ? `<option value="mo2">Mod Organizer 2</option>` : ""}</select></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h2>Mod managers</h2>
+      <div class="field"><label for="mgrMode">Read mods from</label><select id="mgrMode">
+        <option value="auto">Vortex and MO2, when found</option><option value="vortex">Vortex only</option><option value="mo2">MO2 only</option><option value="none">Game folder only</option></select></div>
+      <div class="field"><label>Vortex</label><div>${mg.vortex.detected ? `Found ${mg.vortex.files} deployed files. Vortex mods are shown with their Vortex names and Nexus IDs, and stay under Vortex's control.`
+        : mg.vortex.installed ? "Vortex is installed but hasn't deployed mods to this game folder." : "Not detected."}</div></div>
+      <div class="field"><label>Mod Organizer 2</label><div class="stack">
+        ${mo2 ? `<span class="path">${esc(mo2.path)}</span>` : `<span class="muted">${mg.mo2_candidates.length ? "An instance was found but it points at a different game folder." : "No instance found."}</span>`}
+        <div class="btn-row"><button class="btn" id="pickMo2">${mo2 ? "Change instance" : "Choose MO2 instance"}</button>${s.mo2_instance ? `<button class="btn" id="clrMo2">Use automatic detection</button>` : ""}</div></div></div>
+      ${mo2 ? `<div class="field"><label for="mo2Prof">MO2 profile</label><select id="mo2Prof">${mo2.profiles.map((p) => `<option ${p === mo2.profile ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></div>
+      <div class="field"><label for="mo2Exe">MO2 launches</label><select id="mo2Exe">${mo2.executables.map((x) => `<option ${x.title === (s.mo2_executable || mo2.default_executable) ? "selected" : ""}>${esc(x.title)}</option>`).join("")}</select></div>` : ""}
+    </div>
+    <div class="panel" style="margin-top:18px"><h2>Mod list file</h2>
+      <div class="field"><label>Save to</label><div class="stack"><span class="path">${esc(s.output_dir_effective)}</span><button class="btn" id="pickOut">Change folder</button></div></div>
+      <div class="field"><label>Options</label><div>
+        <label class="check"><input type="checkbox" data-opt="ask_report_path" ${s.ask_report_path ? "checked" : ""}>Ask for a file name and location each time</label>
+        <label class="check"><input type="checkbox" data-opt="auto_open_output" ${s.auto_open_output ? "checked" : ""}>Open the file after it's created</label>
+        <label class="check"><input type="checkbox" data-opt="auto_select_all_logs" ${s.auto_select_all_logs ? "checked" : ""}>Include every log by default</label>
+        <label class="check"><input type="checkbox" data-opt="include_errors_in_output" ${s.include_errors_in_output ? "checked" : ""}>List log errors at the top</label>
+        <label class="check"><input type="checkbox" data-opt="include_grouped_in_output" ${s.include_grouped_in_output !== false ? "checked" : ""}>Include the "Installed Mods" section (each mod with its source, version and Nexus link)</label>
+        <label class="check"><input type="checkbox" data-opt="include_disabled_in_output" ${s.include_disabled_in_output ? "checked" : ""}>Include disabled mods</label></div></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h2>Backups</h2>
+      <p class="muted" style="margin-top:-4px;max-width:85ch">Full backups of your manually installed mods and core frameworks. Vortex and MO2 keep their own copies, so their mods aren't included.</p>
+      <div id="setBackups"><p class="muted">Loading backups…</p></div>
+      <h3 class="sub-h">Replaced files</h3>
+      <p class="muted" style="max-width:85ch">When installing or updating a mod would overwrite files, the old files are moved to
+        <b>Temporarily Disabled Mods\\_Backups (replaced files)</b> instead of being deleted, so you can roll back if an update breaks something.
+        Older builds called this folder <b>_superseded</b>.</p>
+      <div class="upd-strip"><p id="bkInfo">Checking…</p><button class="btn small" id="bkOpen">Open folder</button><button class="btn small danger" id="bkClear">Delete replaced files</button></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h2>Linking mods to Nexus</h2>
+      <div class="field"><label>Link queue</label><div>
+        <label class="check"><input type="checkbox" data-opt="queue_include_disabled" ${s.queue_include_disabled ? "checked" : ""}>Show disabled mods in the link queue</label></div></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h2>Nexus downloads</h2>
+      <div class="field"><label>Mod Manager Download</label><div class="stack">
+        <label class="check"><input type="checkbox" id="nxmToggle" ${nx.registered ? "checked" : ""}>Install "Mod Manager Download" files for Cyberpunk 2077 here</label>
+        <span class="muted">${nx.registered ? (nx.previous ? "Links for other games are passed to the app that handled them before." : "") : nx.owner ? `Currently handled by ${esc(nx.owner)}. Turning this on keeps forwarding other games' links to it.` : "Lets free Nexus accounts update mods with one click from the website."}</span></div></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h2>About</h2>
+      <p>Cyberpunk 2077 Mod List Tool ${esc(boot.app.version)} by Sammmy1036. <button class="link" data-url="${esc(boot.app.nexus_page)}">Nexus page</button> · <button class="link" id="dbgLog">Open debug log</button></p>
+      <p class="muted" style="max-width:85ch">Unofficial fan-made tool, not affiliated with or endorsed by CD PROJEKT S.A. Cyberpunk 2077 is a trademark of CD PROJEKT S.A. Back up your game before disabling frameworks or importing presets. Released under the MIT License.</p></div>`;
+  $("#launchVia").value = s.launch_via;
+  $("#mgrMode").value = s.manager_mode;
+  wireCommon(el);
+  $("#pickDir").onclick = pickGameDir;
+  renderSettingsBackups();
+  const bk = await call("backups_info");
+  $("#bkInfo").textContent = bk.files ? `${plural(bk.files, "file")} from ${plural(bk.sets, "install")}, ${fmtSize(bk.size)}.` : "Nothing has been replaced yet.";
+  $("#bkOpen").disabled = $("#bkClear").disabled = !bk.files;
+  $("#bkOpen").onclick = async () => result(await call("open_backups"));
+  $("#bkClear").onclick = async () => {
+    if (await confirmBox("Delete replaced files?", `This permanently deletes ${plural(bk.files, "replaced file")} (${fmtSize(bk.size)}). Installed mods aren't affected, but you won't be able to roll back earlier updates.`, "Delete replaced files", true)) {
+      if (result(await call("clear_backups"), "Replaced files deleted.")) RENDER.settings(el);
+    }
+  };
+  $("#nxmToggle").onchange = async (e) => { result(await call("nxm_set", e.target.checked), e.target.checked ? "Mod Manager Downloads will install here." : "Restored the previous link handler."); RENDER.settings(el); };
+  $("#dbgLog").onclick = async () => result(await call("open_debug_log"));
+  if ($("#openDir")) $("#openDir").onclick = () => call("open_game_folder", "");
+  $$("[data-cand]", el).forEach((b) => (b.onclick = async () => { const r = await call("set_game_dir", b.dataset.cand); if (result(r, "Game folder set.")) { S.boot.game = r.game; RENDER.settings(el); } }));
+  const save = async (vals) => { const r = await call("save_settings", vals); if (r.ok) { S.boot.settings = r.settings; toast("Saved.", "ok", 1500); } };
+  $("#launchVia").onchange = async (e) => { await save({ launch_via: e.target.value }); poll(); };
+  $("#mgrMode").onchange = async (e) => { await save({ manager_mode: e.target.value }); RENDER.settings(el); };
+  $$("[data-opt]", el).forEach((c) => (c.onchange = () => save({ [c.dataset.opt]: c.checked })));
+  $("#pickOut").onclick = async () => { const r = await call("browse_output_dir"); if (r.ok) RENDER.settings(el); };
+  $("#pickMo2").onclick = async () => { const r = await call("browse_mo2_instance"); if (result(r, "MO2 instance set.")) RENDER.settings(el); };
+  if ($("#clrMo2")) $("#clrMo2").onclick = async () => { await call("clear_mo2_instance"); RENDER.settings(el); };
+  if ($("#mo2Prof")) $("#mo2Prof").onchange = (e) => save({ mo2_profile: e.target.value });
+  if ($("#mo2Exe")) $("#mo2Exe").onchange = (e) => save({ mo2_executable: e.target.value });
+};
+
+/* ------------------------------------------------------------------ boot */
+async function start() {
+  const msg = (t) => { const m = $("#splashMsg"); if (m) m.textContent = t; };
+  msg("Starting up…");
+  await loadLogo();                 // first, so the loading screen shows the logo
+  msg("Connecting…");
+  S.boot = await call("bootstrap");
+  msg("Loading your profile…");
+  await Promise.all([loadGameIcon(), preloadImage(S.boot.nexus?.user?.avatar)]);
+  renderUserChip();
+  $("#userChip").onclick = () => go("nexus");
+  $("#appVersion").textContent = `v${S.boot.app.version}`;
+  $("#sbNexusPage").onclick = (e) => { e.preventDefault(); call("open_url", S.boot.app.nexus_page); };
+  $$(".nav").forEach((b) => (b.onclick = () => go(b.dataset.page)));
+  $("#launchBtn").onclick = async () => {
+    const r = await call("launch_game");
+    if (result(r)) { toast(`Launching Cyberpunk 2077 through ${esc(r.via)}.`, "ok", 3000); applyRunning({ launching: true }); }
+  };
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { if (!$("#modal").hidden) { $("#modal").hidden = true; $("#modal").innerHTML = ""; } else closeDrawer(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && S.page === "mods") { e.preventDefault(); $("#q")?.focus(); }
+  });
+  if (S.boot.game.valid) { msg("Reading your mods…"); await refreshMods(); }
+  await go(S.boot.game.valid ? "overview" : "settings");
+  $("#splash").classList.add("done");
+  setTimeout(() => $("#splash")?.remove(), 400);
+  poll();
+  setInterval(poll, 5000);
+  setInterval(pollRunning, 1500);
+}
+if (typeof window.pywebview?.api?.bootstrap === "function") start();
+else window.addEventListener("pywebviewready", start, { once: true });
+
+</script>
+<script>
+/* Guided tour for the demo build. Drives the real UI (go, openDrawer, poll...) from app.js. */
+"use strict";
+(() => {
+  const D = window.DEMO;
+  window.cpDemoToast = (m) => toast(esc(m), "", 3800);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const until = async (sel, ms = 4000) => { const t = Date.now(); while (!document.querySelector(sel) && Date.now() - t < ms) await wait(80); return document.querySelector(sel); };
+
+  /* the generated mod list, with the error section highlighted */
+  window.demoShowReport = (text) => {
+    const lines = esc(text).split("\n");
+    let inErr = false, rules = 0;
+    const html = lines.map((l) => {
+      if (l.startsWith("Potential Errors to Review")) { inErr = true; rules = 0; return `<mark>${l}</mark>`; }
+      if (inErr) { if (/^={20,}/.test(l) && ++rules === 2) inErr = false; return `<mark>${l}</mark>`; }
+      return /MinimalHUD/.test(l) || /^ERROR - /.test(l) ? `<mark>${l}</mark>` : l;
+    }).join("\n");
+    modal(`<h3>Cyberpunk 2077 Mod List.txt</h3><p class="muted small">This is the file the tool writes. Highlighted lines point at the problem: the error, the file and line, and the mod it belongs to.</p>
+      <pre class="demo-report">${html}</pre><div class="btn-row"><button class="btn primary" data-close>Close</button></div>`);
+    document.querySelector(".modal").classList.add("wide");
+    setTimeout(() => document.querySelector(".demo-report mark")?.scrollIntoView({ block: "center" }), 50);
+  };
+
+  const steps = [
+    { title: "Welcome to the Mod List Tool", body: "This is a working demo of the app with sample mods. The tour shows what it does: tracking mods, updating them, and tracking down errors. You can click around at any point, or use Next.",
+      run: async () => { await go("overview"); }, target: ".slab" },
+    { title: "Updates come first", body: "Mods with newer versions on Nexus are listed at the top. Update downloads and installs them, backing up the old files first. Dismiss hides an update you already have.",
+      run: async () => { await go("overview"); await until("#updPanel .upd-rows"); }, target: "#updPanel" },
+    { title: "Setup check", body: "Green means good to go: all core frameworks are installed and up to date, and the last game session logged no errors. Orange means outdated, red means something needs fixing.",
+      target: ".alerts" },
+    { title: "Every mod, grouped", body: "A mod's .archive, .xl, scripts and CET folder count as one mod, not four files. Switch mods on or off, filter by state, source or folder, and search across file names.",
+      run: async () => { await go("mods"); await until("#modsTable tbody tr.row"); }, target: "#modsTable" },
+    { title: "Mod details", body: "Click any mod to see its Nexus page preview, why it was linked, its version and its files. Wrong match? Not this mod unlinks it, and you can paste a URL or search Nexus to link it correctly.",
+      run: async () => { await go("mods"); openDrawer("loose:neonnightsweather"); await until("#dHero .hero", 3000); }, target: "#drawer" },
+    { title: "GitHub mods too", body: "Mods released on GitHub link to their repository. Update checks use its releases, and plugins report their own version.",
+      run: async () => { openDrawer("loose:hotreloadtools"); await until("#dGhInfo"); }, target: "#drawer .linkbox" },
+    { title: "Now, something breaks", body: "Let's launch the game. A recent game update renamed a function that MinimalHUD's script still calls, so the script compiler fails. The footer flags it right away, while the game is still running.",
+      run: async () => { closeDrawer(); D.breakGame(); applyRunning({ game: true }); await go("overview"); await poll(); await until("#sbErr"); }, target: "#sbErr" },
+    { title: "Follow the alert to the log", body: "Clicking the alert opens the Logs page, filtered to errors. The highlighted lines name the file and the line: r6/scripts/MinimalHUD/HUDCore.reds, line 42.",
+      run: async () => { document.querySelector("#sbErr")?.click(); await until(".viewer pre div.error"); }, target: ".viewer" },
+    { title: "Find the mod that owns the file", body: "Search the Mods page for that path, or open MinimalHUD. Its file list includes r6/scripts/MinimalHUD/HUDCore.reds, so this mod is the cause, and Open folder takes you straight to it.",
+      run: async () => { await go("mods"); const q = await until("#q"); q.value = "HUDCore"; q.dispatchEvent(new Event("input")); await wait(150); openDrawer("loose:minimalhud"); await until("#drawer .files"); }, target: "#drawer .files" },
+    { title: "It's in the mod list file too", body: "Generate mod list puts the errors at the top of the file, along with every installed mod and its Nexus link. Send that one file to a mod author and they can see the problem.",
+      run: async () => { closeDrawer(); window.demoShowReport((await call("copy_report")).text); }, target: ".modal" },
+    { title: "Fix it with one click", body: "MinimalHUD 1.5.0 is already out and supports the new game version. Close the game, then click Update: the new version is installed and the old files are backed up.",
+      run: async () => { document.querySelector("#modal").hidden = true; D.running = false; applyRunning({ game: false }); await go("mods"); const q = $("#q"); if (q) { q.value = ""; q.dispatchEvent(new Event("input")); } openDrawer("loose:minimalhud"); await until("#dUpd"); }, target: "#dUpd" },
+    { title: "Fixed", body: "Updated, and the next session compiles cleanly. The footer alert is gone and the Setup check is green again.",
+      run: async () => { const b = $("#dUpd"); if (b) b.click(); await wait(2600); closeDrawer(); await go("overview"); await poll(); }, target: ".alerts" },
+    { title: "Find your mods on Nexus", body: "Mods you installed by hand get matched to their Nexus pages: from links inside their files, your downloaded archives, and by comparing their files with Nexus. Anything left goes to the link queue.",
+      run: async () => { await go("nexus"); await until("#ident"); }, target: "#ident" },
+    { title: "Browse Nexus", body: "Trending, new and recently updated mods, plus search. Open one to see its files and install it directly.",
+      run: async () => { await go("browse"); await until(".card"); }, target: "#bwGrid" },
+    { title: "That's the tour", body: "Everything else is yours to explore: Core Frameworks, backups and presets under More actions, Settings and more. Restart the tour any time from the banner at the top.",
+      run: async () => { await go("overview"); }, target: null },
+  ];
+
+  let i = -1, busy = false;
+  const card = document.createElement("div");
+  card.className = "tour"; card.setAttribute("role", "dialog"); card.setAttribute("aria-live", "polite");
+  document.body.append(card);
+  const banner = document.createElement("div");
+  banner.className = "demo-banner";
+  banner.innerHTML = `<b>Interactive demo</b><span>Sample mods and data. Nothing is installed or changed on your PC.</span><button class="btn small" id="tourStart">Take the tour</button>`;
+  document.body.append(banner);
+
+  let current = null;
+  function highlight(sel) {
+    current = sel;
+    document.querySelectorAll(".tour-hl").forEach((e) => e.classList.remove("tour-hl"));
+    const el = sel && document.querySelector(sel);
+    if (el) { el.classList.add("tour-hl"); el.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+  }
+  // parts of the UI (footer, lists) redraw themselves: keep the highlight on the current target
+  setInterval(() => {
+    if (!current) return;
+    const el = document.querySelector(current);
+    if (el && !el.classList.contains("tour-hl")) el.classList.add("tour-hl");
+  }, 300);
+  async function show(n) {
+    if (busy) return;
+    busy = true;
+    i = Math.max(0, Math.min(steps.length - 1, n));
+    const s = steps[i];
+    card.innerHTML = `<div class="tour-step">Step ${i + 1} of ${steps.length}</div><h3>${esc(s.title)}</h3><p>${esc(s.body)}</p>
+      <div class="btn-row"><button class="btn small" id="tourEnd">Exit tour</button><span style="flex:1"></span>
+      ${i ? `<button class="btn small" id="tourBack">Back</button>` : ""}<button class="btn small primary" id="tourNext">${i === steps.length - 1 ? "Finish" : "Next"}</button></div>`;
+    card.classList.add("on");
+    $("#tourEnd").onclick = end;
+    if ($("#tourBack")) $("#tourBack").onclick = () => show(i - 1);
+    $("#tourNext").onclick = () => (i === steps.length - 1 ? end() : show(i + 1));
+    try { if (s.run) await s.run(); } catch (e) { console.warn(e); }
+    await wait(120);
+    highlight(s.target);
+    busy = false;
+  }
+  function end() { card.classList.remove("on"); highlight(null); i = -1; }
+  document.addEventListener("keydown", (e) => {
+    if (i < 0 || busy) return;
+    if (e.key === "ArrowRight") show(i + 1);
+    if (e.key === "ArrowLeft") show(i - 1);
+  });
+  $("#tourStart").onclick = () => show(0);
+  window.demoTour = { show, end, steps };
+  // start once the app has finished loading
+  const ready = setInterval(() => { if (document.querySelector("#splash") === null || document.querySelector("#splash.done")) { clearInterval(ready); setTimeout(() => show(0), 500); } }, 150);
+})();
+
+</script>
+</body>
+</html>
