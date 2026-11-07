@@ -37,15 +37,22 @@ class NexusError(Exception):
     pass
 
 
+# Identifies the app on every request, as the Nexus API Acceptable Use Policy asks. Requests to
+# hosts other than the API (website search, file previews, downloads) get these but never the key.
+APP_HEADERS = {
+    "Application-Name": APP_NAME,
+    "Application-Version": APP_VERSION,
+    "User-Agent": f"{APP_NAME.replace(' ', '')}/{APP_VERSION}",
+}
+
+
 class NexusClient:
     def __init__(self, api_key: str, cache_path: str | None = None):
         self.api_key = api_key
         self.session = requests.Session()
         self.session.headers.update({
             "apikey": api_key,
-            "Application-Name": APP_NAME,
-            "Application-Version": APP_VERSION,
-            "User-Agent": f"{APP_NAME.replace(' ', '')}/{APP_VERSION}",
+            **APP_HEADERS,
             "Accept": "application/json",
         })
         self.rate = {"daily": None, "hourly": None}
@@ -289,7 +296,7 @@ class NexusClient:
             try:
                 r = requests.get(LEGACY_SEARCH, params={"terms": term, "game_id": GAME_NUMERIC_ID, "include_adult": 1,
                                                         "blocked_tags": "", "blocked_authors": ""},
-                                 headers={"User-Agent": self.session.headers["User-Agent"]}, timeout=20)
+                                 headers=APP_HEADERS, timeout=20)
                 data = r.json()
             except (requests.RequestException, ValueError):
                 return []
@@ -316,7 +323,7 @@ class NexusClient:
         """File list of an uploaded archive from Nexus's content preview (CDN, no API quota)."""
         def fetch():
             try:
-                r = requests.get(url, headers={"User-Agent": self.session.headers["User-Agent"]}, timeout=20)
+                r = requests.get(url, headers=APP_HEADERS, timeout=20)
                 if r.status_code != 200:
                     return []
                 tree = r.json()
@@ -480,7 +487,7 @@ def sso_login(open_browser, timeout: float = 300.0) -> str:
 
 
 def download(url: str, dest: str, progress=None, cancelled=lambda: False) -> str:
-    with requests.get(url, stream=True, timeout=60) as r:
+    with requests.get(url, stream=True, timeout=60, headers=APP_HEADERS) as r:
         r.raise_for_status()
         total = int(r.headers.get("Content-Length", 0))
         done = 0
