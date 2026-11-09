@@ -253,6 +253,21 @@ def plan_install(extracted: str) -> list[tuple[str, str]]:
     return plan
 
 
+def _replaced_components(mod: Mod, new_rels: list[str]) -> list:
+    """Which of an installed mod's components an update archive replaces.
+
+    A grouped mod (e.g. a main file plus optional files from the same Nexus page) is
+    made of several entries; an update for one file must not remove the others. So only
+    the entries that share at least one component with the new archive are replaced."""
+    if len(mod.members) < 2:
+        return list(mod.components)
+    from .identify import component_paths
+    from .scanner import component_path_key
+    new = component_paths(new_rels)
+    hit = {c.member for c in mod.components if component_path_key(c) in new}
+    return [c for c in mod.components if c.member in hit]
+
+
 def install_archive(game_dir: str, archive: str, replace: Mod | None = None,
                     progress: Progress = _noop, overwrite: bool = False) -> dict:
     """Install a mod archive into the game folder.
@@ -272,7 +287,7 @@ def install_archive(game_dir: str, archive: str, replace: Mod | None = None,
         if not plan:
             raise ValueError("No installable files found in the archive.")
         if replace and replace.source == "loose":
-            for c in replace.components:
+            for c in _replaced_components(replace, [rel for _src, rel in plan]):
                 for rel in c.rel_paths:
                     live = _p(os.path.join(game_dir, TEMP_DISABLED_DIR) if c.disabled else game_dir, rel)
                     if os.path.exists(live):

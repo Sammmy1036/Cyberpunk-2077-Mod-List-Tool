@@ -499,3 +499,176 @@ def test_unlinked_count_respects_disabled_setting(game, tmp_path):
     assert len(api._unlinked_mods()) == len(loose)
     api._cfg.set("github_links", {loose[0].key: {"repo": "a/b"}})
     assert len(api._unlinked_mods()) == len(loose) - 1
+
+
+# --- grouping pieces of one mod / optional-file updates / install folder ----------------
+def _amm(game):
+    touch(game, "bin/x64/plugins/cyber_engine_tweaks/mods/AppearanceMenuMod/init.lua")
+    touch(game, "archive/pc/mod/AMM_Props.archive")
+    touch(game, "archive/pc/mod/AMM_Collab.archive")
+
+
+def test_pieces_linked_to_one_nexus_mod_count_once(game):
+    _amm(game)
+    loose = {m.key: m for m in build_mod_list(game)}
+    before = len(loose)
+    links = {"loose:appearancemenumod": {"mod_id": 790, "name": "Appearance Menu Mod", "version": "2.6"},
+             "loose:ammprops": {"mod_id": 790, "version": "1.1"},       # optional file, own lower version
+             "loose:ammcollab": {"mod_id": 790, "version": "1.0"}}
+    mods = build_mod_list(game, links=links)
+    assert len(mods) == before - 2
+    amm = next(m for m in mods if m.nexus_id == 790)
+    assert amm.name == "Appearance Menu Mod" and amm.version == "2.6"
+    assert set(amm.locations()) == {"cet", "archive"} and len(amm.members) == 3
+    assert amm.key == "loose:appearancemenumod"            # CET folder is the anchor
+    assert amm.to_dict()["grouped"] is True
+    # setting off: listed separately again
+    assert len(build_mod_list(game, links=links, group_by_link=False)) == before
+
+
+def test_install_groups_merge_differently_named_files(game):
+    _amm(game)
+    n = len(build_mod_list(game))
+    groups = [["bin/x64/plugins/cyber_engine_tweaks/mods/appearancemenumod", "archive/pc/mod/amm_props",
+               "archive/pc/mod/amm_collab"]]
+    mods = build_mod_list(game, groups=groups)
+    assert len(mods) == n - 2
+    amm = next(m for m in mods if "cet" in m.locations())
+    assert sum(len(c.rel_paths) for c in amm.components) == 3 and amm.enabled
+
+
+def test_install_records_group_and_install_dir(game, tmp_path, monkeypatch):
+    from cp77mlt.api import Api
+    api = Api(Config(str(tmp_path / "s.json")))
+    api._cfg.set("game_dir", game)
+    api._remember_install_group(["bin/x64/plugins/cyber_engine_tweaks/mods/X/init.lua", "archive/pc/mod/X_a.archive"])
+    api._remember_install_group(["archive/pc/mod/X_a.archive", "r6/scripts/X2/a.reds"])   # update of the same mod
+    api._remember_install_group(["archive/pc/mod/Solo.archive"])                         # single piece: nothing to record
+    g = api._cfg.get("install_groups")
+    assert len(g) == 1 and set(g[0]) == {"bin/x64/plugins/cyber_engine_tweaks/mods/x", "archive/pc/mod/x_a", "r6/scripts/x2"}
+    dl = tmp_path / "dl"
+    dl.mkdir()
+    monkeypatch.setattr(identify, "downloads_dir", lambda: str(dl))
+    assert api._install_start_dir() == str(dl)              # never the game folder by default
+    other = tmp_path / "mods"
+    other.mkdir()
+    api._cfg.set("last_install_dir", str(other))
+    assert api._install_start_dir() == str(other)
+
+
+def test_optional_file_with_lower_version_is_not_an_update():
+    files = {"files": [
+        {"file_id": 1, "version": "2.5", "category_name": "OLD_VERSION", "uploaded_timestamp": 100},
+        {"file_id": 2, "version": "2.6", "category_name": "MAIN", "uploaded_timestamp": 200},
+        {"file_id": 3, "version": "1.1", "category_name": "OPTIONAL", "uploaded_timestamp": 150},
+        {"file_id": 4, "version": "1.0", "category_name": "OLD_VERSION", "uploaded_timestamp": 90},
+        {"file_id": 5, "version": "1.1", "category_name": "OPTIONAL", "uploaded_timestamp": 160}],
+        "file_updates": [{"old_file_id": 1, "new_file_id": 2}, {"old_file_id": 4, "new_file_id": 5}]}
+    st = nexus.installed_file_status
+    assert st(files, "1.1")["current"] is True                 # optional by version
+    assert st(files, None, 3)["current"] is True               # optional by file id
+    assert st(files, None, None, 150)["current"] is True       # by upload timestamp in the download name
+    old = st(files, None, 4)
+    assert old["current"] is False and old["file_id"] == 5 and old["latest"] == "1.1"
+    assert st(files, None, 1)["file_id"] == 2
+    assert st(files, "2.5") is None                            # only an old version has it: unknown -> page check
+    assert st(files, "2.6")["current"] is True
+
+
+def test_update_check_respects_optional_files(game, tmp_path):
+    from cp77mlt.api import Api
+    _amm(game)
+
+    class FakeClient:
+        rate = {}
+
+        def updated(self, _p):
+            return []
+
+        def mod(self, mid, ttl=0):
+            return {"version": "2.6", "name": "AMM"}
+
+        def files(self, mid, ttl=0):
+            return {"files": [{"file_id": 2, "version": "2.6", "category_name": "MAIN"},
+                              {"file_id": 3, "version": "1.1", "category_name": "OPTIONAL"}]}
+
+    api = Api(Config(str(tmp_path / "s.json")))
+    api._cfg.set("game_dir", game)
+    api._cfg.set("nexus_links", {"loose:ammprops": {"mod_id": 790, "version": "1.1"}})
+    api._updates = {}
+    api._nexus = FakeClient()
+    api._save_updates = lambda: None
+    api._ensure_scan()
+    r = api.nexus_check_updates(["loose:ammprops"])
+    import time as _t
+    for _ in range(100):
+        if api.get_task(r["task"])["done"]:
+            break
+        _t.sleep(0.02)
+    assert api.get_task(r["task"])["error"] is None
+    assert api._updates["loose:ammprops"]["update"] is False
+
+
+def test_update_of_one_piece_keeps_the_others(game, tmp_path):
+    _amm(game)
+    links = {"loose:appearancemenumod": {"mod_id": 790}, "loose:ammprops": {"mod_id": 790}}
+    amm = next(m for m in build_mod_list(game, links=links) if m.nexus_id == 790)
+    keep = ops._replaced_components(amm, ["archive/pc/mod/AMM_Props.archive"])
+    assert {c.member for c in keep} == {"loose:ammprops"}
+
+
+# --- trending (7 days) / tracked cache ------------------------------------------------
+class _Resp:
+    def __init__(self, body):
+        self._b = body
+
+    def json(self):
+        return self._b
+
+
+def test_trending_is_last_7_days_ranked_by_endorsements(monkeypatch):
+    import time as _t
+    now = _t.time()
+    iso = lambda days: _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(now - days * 86400))  # noqa: E731
+    nodes = [{"modId": 1, "name": "new low", "createdAt": iso(1), "endorsements": 5},
+             {"modId": 2, "name": "new high", "createdAt": iso(3), "endorsements": 900, "summary": "s",
+              "pictureUrl": "p", "author": "a", "version": "1", "updatedAt": iso(2), "adultContent": False, "status": "PUBLISHED"},
+             {"modId": 3, "name": "old classic", "createdAt": iso(400), "endorsements": 99999}]
+    calls = []
+
+    def post(url, json=None, timeout=None):
+        calls.append(json["variables"]["o"])
+        return _Resp({"data": {"mods": {"nodes": nodes if json["variables"]["o"] == 0 else []}}})
+    c = nexus.NexusClient("k")
+    monkeypatch.setattr(c.session, "post", post)
+    res = c.trending(days=7)
+    assert [x["mod_id"] for x in res] == [2, 1]        # all-time hit (3) excluded, ranked by endorsements
+    assert res[0]["card"]["name"] == "new high" and res[0]["card"]["status"] == "published"
+    assert calls == [0]                                # stopped paging once mods got older than 7 days
+    c.trending(days=7)
+    assert calls == [0]                                # cached
+
+
+def test_to_timestamp_formats():
+    assert nexus.to_timestamp("2026-11-01T00:00:00Z") == nexus.to_timestamp("2026-11-01T00:00:00+00:00") == 1793491200.0
+    assert nexus.to_timestamp(1793491200) == nexus.to_timestamp(1793491200000) == 1793491200.0
+    assert nexus.to_timestamp(None) is None and nexus.to_timestamp("garbage") is None
+
+
+def test_tracked_list_is_cached_between_page_visits(monkeypatch):
+    c = nexus.NexusClient("k")
+    hits = []
+
+    def req(method, path, **kw):
+        hits.append(method)
+        return [{"mod_id": 1, "domain_name": "cyberpunk2077"}] if method == "GET" else {}
+    monkeypatch.setattr(c, "_req", req)
+    for _ in range(5):
+        c.tracked()
+    assert hits == ["GET"]
+    c.track(2)
+    assert {d["mod_id"] for d in c.tracked()} == {1, 2} and hits == ["GET", "POST"]
+    c.untrack(1)
+    assert {d["mod_id"] for d in c.tracked()} == {2}
+    c.tracked(fresh=True)
+    assert hits.count("GET") == 2

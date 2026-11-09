@@ -18,6 +18,7 @@ import uuid
 from . import APP_NAME, APP_VERSION, NEXUS_PAGE, backups, core_mods, game, github, identify, logs, managers, nexus, nxm, ops, report, secure
 from .config import Config, app_data_dir, documents_dir
 from .scanner import TEMP_DISABLED_DIR, Mod, build_mod_list, dir_signature
+from .scanner import component_path_key as scanner_key
 
 
 log = logging.getLogger("cp77mlt")
@@ -202,8 +203,10 @@ class Api:
         allowed = {"auto_open_output", "auto_select_all_logs", "include_errors_in_output",
                    "include_disabled_in_output", "manager_mode", "launch_via", "mo2_profile",
                    "mo2_executable", "nexus_check_on_start", "output_dir", "auto_track", "include_grouped_in_output", "ask_report_path", "queue_include_disabled",
-                   "backup_schedule", "backup_keep"}
+                   "backup_schedule", "backup_keep", "group_mod_files", "mods_view"}
         self._cfg.update({k: v for k, v in values.items() if k in allowed})
+        if "group_mod_files" in values:
+            self._sig = None
         if {"manager_mode", "mo2_profile"} & set(values):
             self._init_mo2()
             self._sig = None
@@ -288,7 +291,9 @@ class Api:
                 mo2_mods = self._mo2.mods()
             except OSError:
                 mo2_mods = []
-        mods = build_mod_list(gd, vortex, mo2_mods, self._cfg.get("nexus_links"))
+        mods = build_mod_list(gd, vortex, mo2_mods, self._cfg.get("nexus_links"),
+                              groups=self._cfg.get("install_groups"),
+                              group_by_link=bool(self._cfg.get("group_mod_files")))
         for m in mods:  # native plugins carry their own version (RedHotTools, Input Loader, ...)
             if m.source == "loose" and not m.version:
                 for c in m.components:
@@ -319,7 +324,7 @@ class Api:
         out = []
         for m in self._mods:
             d = m.to_dict()
-            d["link"] = links.get(m.key)
+            d["link"] = self._link_of(m, links)
             d["update"] = self._updates.get(m.key)
             d["tracked"] = (m.nexus_id in self._tracked) if (self._tracked is not None and m.nexus_id) else None
             d["github"] = gh.get(m.key)
@@ -594,8 +599,11 @@ class Api:
                 info["name"] = data.get("name")
             except nexus.NexusError as e:
                 return _err(str(e))
-        prev = links.get(key) or {}
-        links[key] = {**{k: v for k, v in prev.items() if k not in ("version", "file_id")}, **info}
+        for k in self._keys_for(key):   # every piece of a grouped mod
+            prev = links.get(k) or {}
+            if prev.get("mod_id") != mod_id:   # a different page: its version/file no longer apply
+                prev = {x: v for x, v in prev.items() if x not in ("version", "file_id", "uploaded")}
+            links[k] = {**prev, **info}
         self._cfg.set("nexus_links", links)
         self._updates.pop(key, None)
         if self._nexus and self._cfg.get("auto_track"):
@@ -612,12 +620,13 @@ class Api:
     def nexus_unlink(self, key: str) -> dict:
         """Remove a Nexus link. Remembered as 'not this mod' so automatic matching won't relink it."""
         links = self._cfg.get("nexus_links") or {}
-        old = links.pop(key, None)
+        rej = set(self._cfg.get("nexus_rejected") or [])
+        for k in self._keys_for(key):
+            old = links.pop(k, None)
+            if old and old.get("mod_id"):
+                rej.add(f"{k}|{old['mod_id']}")
         self._cfg.set("nexus_links", links, save=False)
-        if old and old.get("mod_id"):
-            rej = set(self._cfg.get("nexus_rejected") or [])
-            rej.add(f"{key}|{old['mod_id']}")
-            self._cfg.set("nexus_rejected", sorted(rej), save=False)
+        self._cfg.set("nexus_rejected", sorted(rej), save=False)
         self._cfg.save()
         self._updates.pop(key, None)
         with self._scan_lock:
@@ -804,29 +813,75 @@ class Api:
         except RuntimeError as e:
             return _err(str(e))
         path = self._dialog("open", title="Install mod preset" if kind == "preset" else "Install mod",
-                            file_types=["Archives (*.zip;*.7z;*.rar)", "All files (*.*)"])
+                            file_types=["Archives (*.zip;*.7z;*.rar)", "All files (*.*)"],
+                            directory=self._install_start_dir())
         if not path:
             return {"ok": False}
+        self._cfg.set("last_install_dir", os.path.dirname(path))
         gd = self.game_dir
-        info = identify.parse_nexus_filename(path)
+        info = identify.parse_nexus_filename(path) if kind != "preset" else None
 
         def work(prog, _c):
             r = ops.install_archive(gd, path, None, prog, bool(overwrite) and kind == "preset")
+            if kind != "preset":   # one archive = one mod (presets bundle many)
+                self._remember_install_group(r["installed"])
             with self._scan_lock:
                 self._rescan()
             if info:  # Nexus download filename -> link the new mod with exact version
-                self._link_installed(r["installed"], info["mod_id"], None, info["version"], "installed")
+                self._link_installed(r["installed"], info["mod_id"], None, info["version"], "installed",
+                                     uploaded=info.get("timestamp"))
             return r
         return self._task("install", work)
 
-    def _link_installed(self, installed: list[str], mod_id: int, file_id, version, method: str) -> None:
+    def _install_start_dir(self) -> str:
+        """Where the Install mod dialog opens: the folder last installed from, else Downloads."""
+        for d in (self._cfg.get("last_install_dir"), identify.downloads_dir()):
+            if d and os.path.isdir(d):
+                return d
+        return ""
+
+    def _remember_install_group(self, installed: list[str]) -> None:
+        """Files installed from one archive are one mod, whatever folders they land in."""
+        comps = identify.component_paths(installed)
+        if len(comps) < 2:
+            return
+        keep = []
+        for g in self._cfg.get("install_groups") or []:
+            if comps & set(g):     # an update/reinstall of the same mod: merge with the old record
+                comps |= set(g)
+            else:
+                keep.append(g)
+        keep.append(sorted(comps))
+        self._cfg.set("install_groups", keep[-3000:])
+
+    @staticmethod
+    def _members(m) -> list[str]:
+        return list(m.members) if getattr(m, "members", None) else [m.key]
+
+    def _keys_for(self, key: str) -> list[str]:
+        m = self._mods_by_key.get(key)
+        return self._members(m) if m else [key]
+
+    def _link_of(self, m, links: dict | None = None) -> dict | None:
+        links = self._cfg.get("nexus_links") if links is None else links
+        for k in [m.key] + [k for k in self._members(m) if k != m.key]:
+            if (links or {}).get(k):
+                return links[k]
+        return None
+
+    def _link_installed(self, installed: list[str], mod_id: int, file_id, version, method: str,
+                        uploaded: int | None = None) -> None:
         comps = identify.component_paths(installed)
         links = self._cfg.get("nexus_links") or {}
         with self._scan_lock:
             self._rescan()
         for m in self._mods:
-            if m.source == "loose" and identify.mod_component_keys(m) & comps:
-                links[m.key] = {"mod_id": mod_id, "file_id": file_id, "version": version, "method": method}
+            if m.source != "loose":
+                continue
+            for c in m.components:   # link the pre-grouping entries the archive actually touched
+                if scanner_key(c) in comps:
+                    links[c.member or m.key] = {"mod_id": mod_id, "file_id": file_id, "version": version,
+                                                "method": method, **({"uploaded": uploaded} if uploaded else {})}
         self._cfg.set("nexus_links", links)
         with self._scan_lock:
             self._rescan()
@@ -961,6 +1016,7 @@ class Api:
                 if mt["info"]:
                     links[key] = {"mod_id": mt["info"]["mod_id"], "version": mt["info"]["version"],
                                   "name": mt["info"]["name"], "method": "download",
+                                  "uploaded": mt["info"].get("timestamp"),
                                   "archive": os.path.basename(mt["archive"])}
                     suggestions.pop(key, None)
                     by_download += 1
@@ -1202,7 +1258,7 @@ class Api:
                 self._save_updates()
                 return {"checked": len(gh_mods), "updates": n_gh, "rate": None, "linked": len(gh_mods),
                         "unlinked": len(self._unlinked_mods())}
-            items = [(m.key, m.nexus_id, m.version or (links.get(m.key) or {}).get("version"), m) for m in mods] + \
+            items = [(m.key, m.nexus_id, m.version or (self._link_of(m, links) or {}).get("version"), m) for m in mods] + \
                     [(f"core:{c['name']}", c["nexus_id"], c.get("version"), None) for c in core if c["installed"]]
             recent = set()
             try:  # one request says which mods changed this month; the rest can come from cache
@@ -1238,16 +1294,50 @@ class Api:
                         likely = True
                 newer = nexus.version_newer(latest, installed)
                 update = bool(newer) or (newer is None and likely)
+                file_id, outdated = None, []
+                if update and m is not None and basis == "exact":
+                    # The page version is the main file's; optional files have their own.
+                    # Check each installed piece against the mod's file list instead.
+                    res = self._file_check(client, m, mid, links, ttl)
+                    if res is not None:
+                        update, outdated = res["update"], res["outdated"]
+                        latest, file_id = res.get("latest") or latest, res.get("file_id")
                 self._updates[key] = {"mod_id": mid, "nexus_name": d.get("name"), "latest": latest,
                                       "installed": installed, "basis": basis or ("dates" if likely else None),
                                       "update": update, "updated": d.get("updated_timestamp"),
-                                      "picture": d.get("picture_url"), "url": nexus.mod_url(mid)}
+                                      "picture": d.get("picture_url"), "url": nexus.mod_url(mid),
+                                      **({"file_id": file_id} if file_id else {}),
+                                      **({"outdated": outdated} if outdated else {})}
                 n_updates += update
             self._updates_checked = time.time()
             self._save_updates()
             return {"checked": len(items) + len(gh_mods), "updates": n_updates, "rate": client.rate,
                     "linked": len(mods), "unlinked": len(self._unlinked_mods())}
         return self._task("updates", work)
+
+    def _file_check(self, client, m, mid: int, links: dict, ttl: int) -> dict | None:
+        """Per-file update status for a linked mod (and each piece of a grouped mod).
+        None when the file list can't tell, so the caller keeps the page-version result."""
+        try:
+            files = client.files(mid, ttl=ttl)
+        except nexus.NexusError:
+            return None
+        pieces = [(k, links.get(k)) for k in self._members(m)]
+        pieces = [(k, l) for k, l in pieces if l and l.get("mod_id") == mid and (l.get("version") or l.get("file_id"))]
+        if not pieces:
+            pieces = [(m.key, {"version": m.version})]
+        verdicts = []
+        for k, l in pieces:
+            st = nexus.installed_file_status(files, l.get("version"), l.get("file_id"), l.get("uploaded"))
+            if st is None:
+                return None
+            verdicts.append((k, st))
+        stale = [(k, st) for k, st in verdicts if not st["current"]]
+        if not stale:
+            return {"update": False, "outdated": []}
+        k0, st0 = next(((k, st) for k, st in stale if st.get("file_id")), stale[0])
+        return {"update": True, "outdated": [k for k, _ in stale], "latest": st0.get("latest"),
+                "file_id": st0.get("file_id")}
 
     def _check_github(self, gh_mods, gh_links, disabled_root, cancelled) -> int:
         n = 0
@@ -1345,7 +1435,11 @@ class Api:
             self._cfg.set("manual_versions", mv)
         else:
             links = self._cfg.get("nexus_links") or {}
-            links[key] = {**(links.get(key) or {"mod_id": u["mod_id"]}), "version": u.get("latest")}
+            stale = set(u.get("outdated") or [key])
+            for k in self._keys_for(key):
+                if k in stale:
+                    links[k] = {**(links.get(k) or {"mod_id": u["mod_id"]}), "version": u.get("latest"),
+                                **({"file_id": u["file_id"]} if u.get("file_id") else {})}
             self._cfg.set("nexus_links", links)
         u.update({"update": False, "installed": u.get("latest"), "basis": "exact"})
         self._save_updates()
@@ -1391,6 +1485,9 @@ class Api:
             client = self._client()
         except RuntimeError as e:
             return _err(str(e))
+        upd = self._updates.get(key) or {}
+        if upd.get("file_id"):    # the newer version of the exact file that's installed (main or optional)
+            return self._download_and_install(mod_id, upd["file_id"], None, None, key)
         latest = client.latest_main_file(mod_id)
         if not latest:
             return _err("No main file found on the mod page. Open it on Nexus to pick a file.")
@@ -1413,6 +1510,7 @@ class Api:
                 if target is None and not (key_hint or "").startswith("core:"):
                     target = next((x for x in self._mods if x.source == "loose" and x.nexus_id == mod_id), None)
                 r = ops.install_archive(gd, tmp, replace=target, progress=lambda f, msg: prog(0.5 + f * 0.5, msg))
+                self._remember_install_group(r["installed"])
             finally:
                 shutil.rmtree(tmpdir, ignore_errors=True)
             version = info.get("version") or info.get("mod_version")
@@ -1457,6 +1555,7 @@ class Api:
                 nexus.download(asset["browser_download_url"], tmp, lambda f, msg: prog(f * 0.5, f"Downloading {msg}"), cancelled)
                 r = ops.install_archive(gd, tmp, replace=m if m.source == "loose" else None,
                                         progress=lambda f, msg: prog(0.5 + f * 0.5, msg))
+                self._remember_install_group(r["installed"])
             finally:
                 shutil.rmtree(tmpdir, ignore_errors=True)
             version = github.version_of(rel)
@@ -1527,7 +1626,16 @@ class Api:
                 mods = self._fetch_mods(client, ids)
             else:
                 mods, more = None, False
-                if kind in ("latest_added", "latest_updated"):
+                if kind == "trending":   # published in the last 7 days, most endorsed first
+                    try:
+                        ranked = client.trending(days=7)
+                        page = ranked[offset:offset + count]
+                        cards = [x["card"] for x in page if x.get("card")]
+                        mods = cards if len(cards) == len(page) else self._fetch_mods(client, [x["mod_id"] for x in page])
+                        more = offset + count < len(ranked)
+                    except nexus.NexusError:
+                        mods = None
+                elif kind in ("latest_added", "latest_updated"):
                     try:   # sorted listing with paging; falls back to Nexus's 10-item feed
                         ids = client.sorted_ids("createdAt" if kind == "latest_added" else "updatedAt", offset, count)
                         mods = self._fetch_mods(client, ids)

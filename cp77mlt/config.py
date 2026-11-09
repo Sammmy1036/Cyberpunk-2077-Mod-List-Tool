@@ -44,6 +44,10 @@ DEFAULTS: dict = {
     "backup_keep": 5,                 # scheduled backups to keep (manual ones are never pruned)
     "last_backup_ts": None,
     "window": None,                   # last position/size/maximized state of the main window
+    "install_groups": [],             # component paths installed together from one archive (one mod)
+    "group_mod_files": True,          # merge separate pieces linked to the same Nexus mod into one entry
+    "mods_view": "mods",              # Mods page layout: mods | folders
+    "last_install_dir": "",           # where the Install mod dialog opens ("" = Downloads)
     "github_links": {},             # mod key -> {repo: "owner/name", version?}             # track mods on Nexus when they get linked     # nxm handler before we registered (restored on unregister)
     "migrated_from_registry": False,
 }
@@ -163,6 +167,6 @@ class Config:
         with self._lock:
             out = {k: copy.deepcopy(v) for k, v in self.data.items()
                    if k not in ("nexus_api_key", "install_records", "nexus_links", "nexus_suggestions",
-                                "nexus_rejected", "nxm_previous_handler", "github_links")}
+                                "nexus_rejected", "nxm_previous_handler", "github_links", "install_groups")}
             out["output_dir_effective"] = self.data.get("output_dir") or documents_dir()
             return out

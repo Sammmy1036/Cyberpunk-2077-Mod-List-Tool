@@ -228,6 +228,11 @@ input:focus, select:focus { border-color: var(--yellow); outline: none; }
 .table tr.off .name { color: var(--bone-dim); text-decoration: line-through; text-decoration-color: rgba(255,46,76,.6); }
 .table .name { font-size: 15px; }
 .table td.num { text-align: right; color: var(--bone-dim); font-variant-numeric: tabular-nums; }
+.table tr.grouphead td { background: var(--charcoal); color: var(--yellow); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 12px 10px 6px; }
+.table tr.grouphead .muted { text-transform: none; letter-spacing: 0; }
+.tag.grp { border-color: var(--cyan); color: var(--cyan); vertical-align: middle; }
+.files-h { font-size: 12px; color: var(--bone-dim); margin: 10px 0 4px; }
+.files-h:first-of-type { margin-top: 0; }
 .tag { display: inline-block; font-size: 11px; padding: 1px 6px; margin: 1px 3px 1px 0; border: 1px solid var(--graphite); color: var(--bone-dim); }
 .src { font-size: 12px; padding: 2px 7px; }
 .src.vortex { color: var(--black); background: var(--cyan); }

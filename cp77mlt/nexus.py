@@ -139,15 +139,35 @@ class NexusClient:
         return self._cached(f"md5:{md5}", 30 * 86400,
                             lambda: self._req("GET", f"/games/{GAME}/mods/md5_search/{md5}.json") or [])
 
-    def tracked(self) -> list[dict]:
+    TRACKED_TTL = 600
+
+    def tracked(self, fresh: bool = False) -> list[dict]:
+        """Tracked mods. Cached in memory for a few minutes so opening the Nexus page
+        repeatedly doesn't spend a request each time; track/untrack keep it current."""
+        now = time.time()
+        hit = getattr(self, "_tracked_cache", None)
+        if not fresh and hit and now - hit[0] < self.TRACKED_TTL:
+            return [dict(d) for d in hit[1]]
         data = self._req("GET", "/user/tracked_mods.json") or []
-        return [d for d in data if d.get("domain_name") == GAME]
+        out = [d for d in data if d.get("domain_name") == GAME]
+        self._tracked_cache = (now, out)
+        return [dict(d) for d in out]
+
+    def _tracked_edit(self, mod_id: int, add: bool) -> None:
+        hit = getattr(self, "_tracked_cache", None)
+        if hit:
+            rows = [d for d in hit[1] if d.get("mod_id") != mod_id]
+            if add:
+                rows.append({"mod_id": mod_id, "domain_name": GAME})
+            self._tracked_cache = (hit[0], rows)
 
     def track(self, mod_id: int) -> None:
         self._req("POST", "/user/tracked_mods.json", params={"domain_name": GAME}, data={"mod_id": mod_id})
+        self._tracked_edit(mod_id, True)
 
     def untrack(self, mod_id: int) -> None:
         self._req("DELETE", "/user/tracked_mods.json", params={"domain_name": GAME}, data={"mod_id": mod_id})
+        self._tracked_edit(mod_id, False)
 
     def updated(self, period: str = "1m") -> list[dict]:
         return self._cached(f"updated:{period}", 900,
@@ -290,6 +310,51 @@ class NexusClient:
             raise NexusError("Paged listing unavailable.")
         return self._cached(f"sorted:{field}:{offset}:{count}", 600, fetch)
 
+    # Fields for Browse cards straight from GraphQL (no v1 quota). If the server rejects
+    # them, the plain query is used and card details come from the v1 mod endpoint.
+    _CARD_FIELDS = "modId name createdAt endorsements summary pictureUrl author version updatedAt adultContent status"
+
+    def trending(self, days: int = 7, pages: int = 8, page_size: int = 100) -> list[dict]:
+        """Nexus's own definition of trending: mods *published* in the last ``days`` days,
+        ranked by endorsements. Built from the newest-first listing, then ranked locally.
+        Each item: {mod_id, endorsements, created, card|None}. Cached for 30 minutes."""
+        def fetch():
+            since = time.time() - days * 86400
+            for fields in (self._CARD_FIELDS, "modId name createdAt endorsements"):
+                for filt in self._CATALOG_FILTERS:
+                    out, ok = {}, True
+                    for page in range(pages):
+                        q = ("query T($g: String!, $o: Int!) { mods(" + filt +
+                             ", sort: [{ createdAt: { direction: DESC } }]" +
+                             f", count: {page_size}, offset: $o) {{ nodes {{ {fields} }} }} }}")
+                        try:
+                            r = self.session.post(GRAPHQL, json={"query": q, "variables": {"g": GAME, "o": page * page_size}},
+                                                  timeout=25)
+                            body = r.json()
+                        except (requests.RequestException, ValueError):
+                            ok = False
+                            break
+                        nodes = ((body.get("data") or {}).get("mods") or {}).get("nodes")
+                        if body.get("errors") or nodes is None:
+                            ok = False
+                            break
+                        oldest = None
+                        for n in nodes:
+                            created = to_timestamp(n.get("createdAt"))
+                            if created is None:
+                                continue
+                            oldest = created if oldest is None else min(oldest, created)
+                            if created >= since and n.get("modId"):
+                                out[n["modId"]] = {"mod_id": n["modId"], "endorsements": n.get("endorsements") or 0,
+                                                   "created": created,
+                                                   "card": _gql_card(n) if "summary" in fields else None}
+                        if not nodes or oldest is None or oldest < since:
+                            break
+                    if ok:
+                        return sorted(out.values(), key=lambda x: (-x["endorsements"], -x["created"]))
+            raise NexusError("Trending list unavailable.")
+        return self._cached(f"trending:{days}", 1800, fetch)
+
     def legacy_search(self, term: str) -> list[dict]:
         """The website's search endpoint; fallback when GraphQL search is unavailable."""
         def fetch():
@@ -379,6 +444,38 @@ class NexusClient:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def to_timestamp(v) -> float | None:
+    """GraphQL dates come as ISO strings (or occasionally epoch numbers)."""
+    if v is None or v == "":
+        return None
+    if isinstance(v, (int, float)):
+        return float(v / 1000 if v > 1e11 else v)
+    s = str(v).strip()
+    if s.isdigit():
+        return to_timestamp(int(s))
+    from datetime import datetime, timezone
+    try:
+        d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.timestamp()
+
+
+def _gql_card(n: dict) -> dict:
+    """GraphQL mod node -> the v1 field names the Browse cards use."""
+    author = n.get("author")
+    if isinstance(author, dict):
+        author = author.get("name")
+    upd = to_timestamp(n.get("updatedAt"))
+    return {"mod_id": n.get("modId"), "name": n.get("name"), "summary": n.get("summary"),
+            "picture_url": n.get("pictureUrl"), "author": author, "version": n.get("version"),
+            "endorsement_count": n.get("endorsements"), "updated_timestamp": int(upd) if upd else None,
+            "contains_adult_content": bool(n.get("adultContent")),
+            "status": (str(n.get("status")).lower() if n.get("status") else None)}
+
+
 def parse_size(v) -> int | None:
     """'8.86 kB' / '12.3 MB' / 12345 -> bytes."""
     if v is None:
@@ -443,6 +540,55 @@ def version_newer(latest: str | None, installed: str | None) -> bool | None:
     a += ((0, 0),) * (n - len(a))
     b += ((0, 0),) * (n - len(b))
     return a > b
+
+
+CURRENT_CATEGORIES = ("MAIN", "UPDATE", "OPTIONAL", "MISCELLANEOUS")
+
+
+def _same_version(a: str | None, b: str | None) -> bool:
+    if not a or not b:
+        return False
+    return version_newer(a, b) is False and version_newer(b, a) is False
+
+
+def installed_file_status(files_data: dict | None, version: str | None = None, file_id: int | None = None,
+                          uploaded: int | None = None) -> dict | None:
+    """Is an installed Nexus *file* still current?
+
+    The mod page's version is usually the main file's. Optional files often carry their
+    own, lower, version numbers, so comparing them with the page version reports an
+    update that doesn't exist. Instead look at the mod's file list:
+
+    * known file (file_id or upload timestamp from the download name): outdated only if
+      Nexus lists a newer file replacing it, or moved it to Old versions/Archived;
+    * only the version known: current if any file in Main/Update/Optional/Misc has
+      that version.
+
+    Returns {"current": bool, "latest": version|None, "file_id": replacement|None} or None
+    when the file list doesn't settle it."""
+    if not files_data:
+        return None
+    files = files_data.get("files") or []
+    by_id = {f.get("file_id"): f for f in files if f.get("file_id")}
+    if not file_id and uploaded:
+        file_id = next((f["file_id"] for f in files if f.get("file_id") and f.get("uploaded_timestamp") == uploaded), None)
+    if file_id and file_id in by_id:
+        nxt = {u.get("old_file_id"): u.get("new_file_id") for u in files_data.get("file_updates") or []}
+        cur, seen = file_id, set()
+        while cur in nxt and cur not in seen and nxt[cur] in by_id:
+            seen.add(cur)
+            cur = nxt[cur]
+        if cur != file_id:
+            f = by_id[cur]
+            return {"current": False, "latest": f.get("version"), "file_id": cur}
+        if by_id[file_id].get("category_name") in CURRENT_CATEGORIES:
+            return {"current": True, "latest": by_id[file_id].get("version"), "file_id": None}
+        return {"current": False, "latest": None, "file_id": None}
+    if version:
+        for f in files:
+            if f.get("category_name") in CURRENT_CATEGORIES and _same_version(f.get("version"), version):
+                return {"current": True, "latest": f.get("version"), "file_id": None}
+    return None
 
 
 def md5_file(path: str, cache: dict | None = None) -> str:

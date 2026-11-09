@@ -29,6 +29,10 @@ const call = async (name, ...args) => {
 const fmtSize = (b) => !b ? "" : b < 1e6 ? `${Math.max(1, Math.round(b / 1e3))} KB` : b < 1e9 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1e9).toFixed(2)} GB`;
 const fmtDate = (ts) => ts ? new Date(ts * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const LOC_PATH = { archive: "archive/pc/mod", redmod: "mods", cet: "bin/x64/plugins/cyber_engine_tweaks/mods", redscript: "r6/scripts",
+  tweak: "r6/tweaks", red4ext: "red4ext/plugins", input: "r6/input", asi: "bin/x64/plugins" };
+const norm = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const groupTitle = (m) => "Grouped as one mod: " + m.components.map((c) => `${LOC[c.location] || c.location}: ${c.name}`).join(", ");
 const LOC = { archive: "Archive", redmod: "REDmod", cet: "CET", redscript: "Redscript", tweak: "TweakXL", red4ext: "RED4ext", input: "Input", asi: "ASI" };
 const SRC = { loose: "Manual", vortex: "Vortex", mo2: "MO2", github: "GitHub" };
 
@@ -685,6 +689,9 @@ RENDER.mods = async (el) => {
       <div class="seg" id="segSource"></div>
     </div>
     <div class="subbar"><div class="chips" id="locChips"></div><div class="btn-row">
+      <div class="seg" id="segView">
+        <button data-v="mods" title="Groups individual mods which are installed in multiple folders/files as one viewable mod.">Grouped Mods</button>
+        <button data-v="folders" title="Does not group mod files/folders as one mod, they all show up as a toggleable/individual mod in its own row.">Ungrouped Mods</button></div>
       <button class="btn" id="btnInstall" title="Install a mod from a .zip, .7z or .rar you downloaded">Install mod</button>
       <button class="btn" id="btnMore" aria-haspopup="true">More actions</button></div></div>
     <table class="table" id="modsTable"><thead><tr>
@@ -694,6 +701,11 @@ RENDER.mods = async (el) => {
     </tr></thead><tbody></tbody></table>
     <div id="bulkHost"></div>`;
   $("#q").oninput = (e) => { f.q = e.target.value; renderModsTable(); };
+  $$("#segView button", el).forEach((b) => (b.onclick = async () => {
+    const r2 = await call("save_settings", { mods_view: b.dataset.v });
+    if (r2.ok) S.boot.settings = r2.settings;
+    renderModsTable();
+  }));
   const installDone = async (res) => {
     const n = res.displaced?.length;
     toast(`Installed ${plural(res.installed.length, "file")}.${n ? res.overwritten ? ` ${plural(n, "existing file")} overwritten.` : ` ${plural(n, "replaced file")} backed up to the disabled folder.` : ""}`, "ok", 7000);
@@ -774,7 +786,23 @@ function renderModsTable() {
     tb.innerHTML = `<tr><td colspan="7"><div class="empty">${all.length ? "<b>No mods match these filters</b>Clear the search or pick another filter." :
       "<b>No mods installed yet</b>Use Install mod to add one, or install mods with Vortex or MO2."}</div></td></tr>`;
   } else {
-    tb.innerHTML = list.map((m) => {
+    const view = S.boot.settings.mods_view === "folders" ? "folders" : "mods";
+    $$("#segView button").forEach((b) => b.classList.toggle("on", b.dataset.v === view));
+    const fileRowHtml = (m, c) => {
+      const lock = locked || m.source === "vortex";
+      const files = c.is_dir ? [c.paths[0].split("/").pop() + "/"] : c.paths.map((p) => p.split("/").pop()).sort((a, b) => a.length - b.length || a.localeCompare(b));
+      const nx = m.nexus_id ? `<span class="muted">#${m.nexus_id}</span>` : m.github ? `<span class="tag">GitHub</span>` : `<span class="muted">Not linked</span>`;
+      return `<tr class="row ${c.disabled ? "off" : ""} ${S.sel.has(m.key) ? "sel" : ""}" data-key="${esc(m.key)}">
+        <td><label class="check"><input type="checkbox" class="pick" ${S.sel.has(m.key) ? "checked" : ""} aria-label="Select ${esc(m.name)}"></label></td>
+        <td><input type="checkbox" class="switch ${m.partial ? "partial" : ""}" ${m.enabled ? "checked" : ""} ${lock ? "disabled" : ""}
+          title="${m.source === "vortex" ? "Managed by Vortex. Toggle it in Vortex." : locked ? "Close the game to change mods" : `${m.enabled ? "Disable" : "Enable"} ${m.grouped ? "the whole mod: " + m.name : "this mod"}`}" aria-label="Enable ${esc(m.name)}"></td>
+        <td><div class="name">${files.map(esc).join("<br>")}</div>${m.grouped || norm(m.name) !== norm(c.name) ? `<span class="tag" title="This file belongs to ${esc(m.name)}">Part of ${esc(m.name)}</span>` : ""}</td>
+        <td><span class="src ${m.source}">${SRC[m.source]}</span></td>
+        <td>${esc(m.version || m.link?.version || "")}</td>
+        <td>${nx}</td>
+        <td class="num">${fmtSize(c.size)}</td></tr>`;
+    };
+    const rowHtml = (m, loc) => {
       const lock = locked || m.source === "vortex";
       const nx = m.update?.update && m.enabled ? `<span class="upd">Update ${esc(m.update.latest)}</span>` :
         m.nexus_id ? `<span class="muted">#${m.nexus_id}</span>${m.tracked ? `<span class="trk" title="Tracked on Nexus">◆</span>` : ""}${m.github ? ` <span class="tag">GitHub</span>` : ""}`
@@ -783,19 +811,30 @@ function renderModsTable() {
         <td><label class="check"><input type="checkbox" class="pick" ${S.sel.has(m.key) ? "checked" : ""} aria-label="Select ${esc(m.name)}"></label></td>
         <td><input type="checkbox" class="switch ${m.partial ? "partial" : ""}" ${m.enabled ? "checked" : ""} ${lock ? "disabled" : ""}
           title="${m.source === "vortex" ? "Managed by Vortex. Toggle it in Vortex." : locked ? "Close the game to change mods" : m.enabled ? "Disable" : "Enable"}" aria-label="Enable ${esc(m.name)}"></td>
-        <td><div class="name">${esc(m.name)}</div>${m.locations.map((l) => `<span class="tag">${LOC[l] || l}</span>`).join("")}</td>
+        <td><div class="name">${esc(m.name)}${m.grouped ? ` <span class="tag grp" title="${esc(groupTitle(m))}">${m.components.length} parts</span>` : ""}</div>${loc
+          ? m.components.filter((c) => c.location === loc).map((c) => `<span class="tag">${esc(c.name)}</span>`).join("")
+          : m.locations.map((l) => `<span class="tag">${LOC[l] || l}</span>`).join("")}</td>
         <td><span class="src ${m.source}">${SRC[m.source]}</span></td>
         <td>${esc(m.version || m.link?.version || "")}</td>
         <td>${nx}</td>
         <td class="num">${fmtSize(m.size)}</td></tr>`;
-    }).join("");
+    };
+    if (view === "folders") {
+      const order = Object.keys(LOC).filter((l) => !f.locs.size || f.locs.has(l));
+      const other = list.filter((m) => !m.locations.length);
+      tb.innerHTML = order.map((l) => {
+        const parts = list.flatMap((m) => m.components.filter((c) => c.location === l).map((c) => [m, c]))
+          .sort((a, b) => a[1].name.localeCompare(b[1].name));
+        return parts.length ? `<tr class="grouphead"><td colspan="7">${LOC[l]} <span class="muted">${esc(LOC_PATH[l] || "")} · ${plural(parts.length, "item")}</span></td></tr>` + parts.map(([m, c]) => fileRowHtml(m, c)).join("") : "";
+      }).join("") + (other.length ? `<tr class="grouphead"><td colspan="7">Mod manager (virtual files) <span class="muted">· ${plural(other.length, "mod")}</span></td></tr>` + other.map((m) => rowHtml(m)).join("") : "");
+    } else tb.innerHTML = list.map((m) => rowHtml(m)).join("");
   }
   $$("tr.row", tb).forEach((tr) => {
     const key = tr.dataset.key;
     tr.onclick = (e) => {
       if (e.target.closest(".switch, .check")) return;
       if (e.ctrlKey || e.metaKey) { S.sel.has(key) ? S.sel.delete(key) : S.sel.add(key); renderModsTable(); return; }
-      openDrawer(key);
+      drawerShows(key) ? closeDrawer() : openDrawer(key);   // clicking the same mod again closes its pane
     };
     $(".pick", tr).onchange = (e) => { e.target.checked ? S.sel.add(key) : S.sel.delete(key); renderModsTable(); };
     $(".switch", tr).onchange = async (e) => { await toggleMods([key], e.target.checked); };
@@ -846,6 +885,7 @@ async function identifyDone(res) {
 }
 
 /* drawer */
+const drawerShows = (k) => S.drawerKey === k && $("#drawer").classList.contains("open");
 function closeDrawer() { const d = $("#drawer"); d.classList.remove("open"); d.setAttribute("aria-hidden", "true"); S.drawerKey = null; }
 function openDrawer(key) {
   const m = S.mods.find((x) => x.key === key);
@@ -855,6 +895,11 @@ function openDrawer(key) {
   const locked = S.running?.game;
   const signedIn = !!S.boot.nexus.user;
   const files = m.source === "mo2" ? m.files : m.components.flatMap((c) => c.paths.map((p) => `${c.disabled ? "[disabled] " : ""}${p}${c.is_dir ? "/" : ""}`));
+  const filesHtml = m.source === "mo2" || m.locations.length < 2 ? `<div class="files">${esc(files.join("\n"))}</div>`
+    : m.locations.map((l) => {
+      const fl = m.components.filter((c) => c.location === l).flatMap((c) => c.paths.map((p) => `${c.disabled ? "[disabled] " : ""}${p}${c.is_dir ? "/" : ""}`));
+      return `<div class="files-h">${LOC[l] || l} <span class="muted">(${fl.length})</span></div><div class="files">${esc(fl.join("\n"))}</div>`;
+    }).join("");
   const how = { in_files: "found in the mod's own files", verified: "its files match the Nexus upload", download: "matched to " + (m.link?.archive || "a downloaded archive"),
     name: "matched by name", confirmed: "confirmed by you", manual: "linked by you", installed: "installed by this tool", md5: "matched by file hash" }[m.link?.method] || "";
   const canLink = m.source !== "vortex";
@@ -892,8 +937,8 @@ function openDrawer(key) {
           <div class="btn-row"><button class="btn small" data-url="https://github.com/${esc(m.github.repo)}/releases">Releases</button><button class="btn small danger" id="dGhUnlink">Unlink</button></div></div>`
         : `<div class="inline-form"><input type="text" id="dGh" placeholder="For mods released on GitHub: paste the repository URL" aria-label="GitHub repository URL"><button class="btn" id="dGhBtn">Link</button></div>`}` : ""}
 
-      <h4>Files (${files.length})</h4>
-      <div class="files">${esc(files.join("\n"))}</div>
+      <h4>Files (${files.length})${m.grouped ? ` <span class="muted small">· ${m.components.length} parts grouped as one mod</span>` : ""}</h4>
+      ${filesHtml}
     </div>`;
   d.classList.add("open");
   d.setAttribute("aria-hidden", "false");
@@ -1118,7 +1163,7 @@ async function renderQueue() {
       btn.textContent = "Close search"; btn.setAttribute("aria-expanded", "true");
     };
     $("[data-files]", row).onclick = () => openDrawer(key);
-    $(".qname", row).onclick = () => openDrawer(key);
+    $(".qname", row).onclick = () => (drawerShows(key) ? closeDrawer() : openDrawer(key));
   });
   if ($("#qAll")) $("#qAll").onclick = async () => { S.filter.state = "unlinked"; await go("mods"); };
 }
@@ -1159,8 +1204,9 @@ RENDER.browse = async (el) => {
   }
   const b = S.browse;
   el.innerHTML = `<div class="toolbar">
-      <div class="seg" id="bwKind">${[["trending", "Trending"], ["latest_added", "New"], ["latest_updated", "Recently updated"]]
-        .map(([k, l]) => `<button data-k="${k}" class="${b.kind === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="seg" id="bwKind">${[["trending", "Trending", "Mods published in the last 7 days, most endorsed first"], ["latest_added", "New", "Newest mods first"],
+        ["latest_updated", "Recently updated", "Most recently updated mods first"]]
+        .map(([k, l, t]) => `<button data-k="${k}" title="${t}" class="${b.kind === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div class="search"><input type="search" id="bwQ" placeholder="Search Cyberpunk 2077 mods, or paste a Nexus URL" value="${esc(b.term)}" aria-label="Search Nexus"></div>
       <button class="btn" id="bwSite" title="Opens nexusmods.com in your browser. Mod Manager Download links still install here when that's turned on in Settings.">Open full Nexus site</button>
     </div>
@@ -1200,11 +1246,11 @@ async function loadCards(append = false) {
   if (!append) grid.innerHTML = "";
   if (!append && !fresh.length) { grid.innerHTML = `<div class="empty"><b>No mods found</b>Try fewer or different words.</div>`; return; }
   grid.insertAdjacentHTML("beforeend", fresh.map(cardHtml).join(""));
-  $$(".card:not([data-wired])", grid).forEach((c) => { c.dataset.wired = 1; c.onclick = () => openBrowseDrawer(+c.dataset.id); });
+  $$(".card:not([data-wired])", grid).forEach((c) => { c.dataset.wired = 1; c.onclick = () => (drawerShows(`browse:${c.dataset.id}`) ? closeDrawer() : openBrowseDrawer(+c.dataset.id)); });
   b.offset += PAGE_SIZE;
   more.hidden = !r.more;
   more.onclick = () => loadCards(true);
-  if (!r.more && b.kind === "trending") note.textContent = "Nexus lists the top trending mods only. Try New or Recently updated for more.";
+  if (!r.more && b.kind === "trending") note.textContent = "That's every mod published in the last 7 days. Try New or Recently updated for more.";
 }
 async function openBrowseDrawer(id) {
   S.drawerKey = `browse:${id}`;
@@ -1303,6 +1349,9 @@ RENDER.settings = async (el) => {
     <div class="panel" style="margin-top:18px"><h2>Linking mods to Nexus</h2>
       <div class="field"><label>Link queue</label><div>
         <label class="check"><input type="checkbox" data-opt="queue_include_disabled" ${s.queue_include_disabled ? "checked" : ""}>Show disabled mods in the link queue</label></div></div>
+      <div class="field"><label>Mod file grouping</label><div class="stack">
+        <label class="check"><input type="checkbox" data-opt="group_mod_files" ${s.group_mod_files !== false ? "checked" : ""}>Group files that belong to the same Nexus mod into one entry</label>
+        <span class="muted">For example, Appearance Menu Mod's CET folder and its archive files are listed and counted as one mod. Files you installed together from one archive with Install mod are always grouped.</span></div></div>
     </div>
     <div class="panel" style="margin-top:18px"><h2>Nexus downloads</h2>
       <div class="field"><label>Mod Manager Download</label><div class="stack">
@@ -1354,7 +1403,10 @@ async function start() {
   $("#userChip").onclick = () => go("nexus");
   $("#appVersion").textContent = `v${S.boot.app.version}`;
   $("#sbNexusPage").onclick = (e) => { e.preventDefault(); call("open_url", S.boot.app.nexus_page); };
-  $$(".nav").forEach((b) => (b.onclick = () => go(b.dataset.page)));
+  $$(".nav").forEach((b) => (b.onclick = () => {
+    if (b.dataset.page === S.page) { closeDrawer(); return; }   // already here: no reload, no Nexus requests
+    go(b.dataset.page);
+  }));
   $("#launchBtn").onclick = async () => {
     const r = await call("launch_game");
     if (result(r)) { toast(`Launching Cyberpunk 2077 through ${esc(r.via)}.`, "ok", 3000); applyRunning({ launching: true }); }

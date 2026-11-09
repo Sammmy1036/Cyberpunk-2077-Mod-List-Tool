@@ -57,6 +57,10 @@ touch("bin/x64/plugins/cyber_engine_tweaks/mods/VirtualAtelier/init.lua")
 touch("r6/scripts/VirtualAtelier/Atelier.reds")
 touch("r6/scripts/OldHud/hud.reds")
 touch("r6/tweaks/BetterLootMarkers.yaml")
+# one Nexus mod installed by hand as differently named pieces (main + optional file)
+touch("bin/x64/plugins/cyber_engine_tweaks/mods/PoliceOverhaul/init.lua")
+touch("r6/scripts/PoliceOverhaul/main.reds")
+touch("archive/pc/mod/NCPD_Optional_Uniforms.archive", "x" * 300000)
 touch("mods/ImmersiveRippers/info.json", json.dumps({"name": "Immersive Rippers", "version": "1.4"}))
 touch("mods/ImmersiveRippers/archives/x.archive")
 touch("Temporarily Disabled Mods/archive/pc/mod/RainbowCarPaint.archive")
@@ -81,7 +85,9 @@ with zipfile.ZipFile(os.path.join(tmp, "Downloads", "Night City LUT-777-1-3-1750
     z.writestr("NCLUT/archive/pc/mod/NightCityLUT.archive.xl", "x")
 cfg = Config(os.path.join(tmp, "settings.json"))
 cfg.set("game_dir", G)
-cfg.set("nexus_links", {"loose:virtualatelier": {"mod_id": 2987, "version": "1.6.0", "name": "Virtual Atelier", "method": "md5"}})
+cfg.set("nexus_links", {"loose:virtualatelier": {"mod_id": 2987, "version": "1.6.0", "name": "Virtual Atelier", "method": "md5"},
+                         "loose:policeoverhaul": {"mod_id": 4321, "version": "3.2", "name": "Police Overhaul", "method": "manual"},
+                         "loose:ncpdoptionaluniforms": {"mod_id": 4321, "version": "1.0", "method": "manual"}})
 api = Api(cfg)
 
 
@@ -130,6 +136,10 @@ class FakeNexus:
                 (901, "Alleyway Crowds Expanded", "Busier back streets."), (555, "Better Loot Markers", "Clearer loot icons.")]
         return [{"mod_id": i, "name": n, "summary": t, "author": "modder", "version": "1.0", "endorsement_count": 1234 * (k + 1),
                  "updated_timestamp": 1760000000, "picture_url": f"/thumb.svg?{i}", "status": "published"} for k, (i, n, t) in enumerate(base)]
+
+    def trending(self, days=7):
+        return [{"mod_id": c["mod_id"], "endorsements": c["endorsement_count"], "created": 0, "card": c}
+                for c in sorted(self.feed("trending"), key=lambda c: -c["endorsement_count"])]
 
     def catalog(self, progress=None, cancelled=None):
         return self.CAT
@@ -280,6 +290,12 @@ with sync_playwright() as p:
     FAKE_RUN["game"] = False; pg.wait_for_timeout(2200)
     pg.click("button.nav[data-page=mods]"); pg.wait_for_timeout(700)
     pg.screenshot(path=f"{OUT}/2_mods.png")
+    pg.click("#segView button[data-v=folders]"); pg.wait_for_timeout(400)
+    pg.screenshot(path=f"{OUT}/2_mods_by_folder.png")
+    pg.click("#segView button[data-v=mods]"); pg.wait_for_timeout(300)
+    pg.locator("tr.row", has_text="Police Overhaul").click(); pg.wait_for_timeout(500)
+    pg.screenshot(path=f"{OUT}/2_grouped_drawer.png")
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
     pg.click("#thName"); pg.wait_for_timeout(250)
     print("SORT HEADER:", pg.inner_text("#thName")); pg.click("#thName"); pg.wait_for_timeout(250)
     pg.click("#btnMore"); pg.wait_for_timeout(300); pg.click("#bBackups"); pg.wait_for_timeout(600)

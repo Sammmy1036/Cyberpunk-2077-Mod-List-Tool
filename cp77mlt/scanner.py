@@ -8,7 +8,11 @@ v2 counted every top-level file, so one mod shipping ``Foo.archive`` +
 2. Files deployed by Vortex are attributed to the Vortex mod that owns them.
 3. Remaining loose components with the same normalised name across locations
    (archive + CET + redscript + ...) are merged into one mod.
-4. MO2 mods (virtual, not in the game folder) are listed from the MO2 profile.
+4. Loose mods that are known to be one mod are merged into a single entry:
+   files installed together from one archive by this tool (``groups``) and,
+   unless turned off, separate pieces linked to the same Nexus mod page
+   (e.g. AMM's CET folder + its archive/pc/mod files).
+5. MO2 mods (virtual, not in the game folder) are listed from the MO2 profile.
 """
 from __future__ import annotations
 
@@ -72,6 +76,7 @@ class Component:
     is_dir: bool
     disabled: bool
     size: int = 0
+    member: str = ""         # key of the loose entry it belonged to before grouping
 
     @property
     def id(self) -> str:
@@ -90,6 +95,7 @@ class Mod:
     version: str | None = None
     manager_ref: str | None = None     # vortex staging folder / mo2 mod name
     files: list[str] = field(default_factory=list)  # for MO2 mods (virtual)
+    members: list[str] = field(default_factory=list)  # keys of the loose entries merged into this one
 
     def locations(self) -> list[str]:
         return sorted({c.location for c in self.components})
@@ -103,8 +109,11 @@ class Mod:
             "locations": self.locations(),
             "size": sum(c.size for c in self.components),
             "components": [{"location": c.location, "name": c.name, "is_dir": c.is_dir,
-                            "disabled": c.disabled, "paths": c.rel_paths} for c in self.components],
+                            "disabled": c.disabled, "paths": c.rel_paths, "size": c.size}
+                           for c in self.components],
             "files": self.files[:200],
+            "members": self.members or [self.key],
+            "grouped": len(self.members) > 1,
             "file_count": len(self.files) if self.source == "mo2" else
             sum(len(c.rel_paths) if not c.is_dir else _count_files_hint(c) for c in self.components),
         }
@@ -168,6 +177,86 @@ def scan_components(tree_root: str, disabled: bool) -> list[Component]:
     return comps
 
 
+def component_path_key(c: Component) -> str:
+    """'r6/scripts/foo', 'archive/pc/mod/coolthing' (same shape as identify.component_paths)."""
+    return f"{LOCATION_BY_KEY[c.location][1]}/{c.name}".lower()
+
+
+def version_key(v: str | None) -> tuple:
+    parts = re.findall(r"\d+|[a-zA-Z]+", (v or "").lstrip("vV"))
+    t = [(0, int(p)) if p.isdigit() else (-1, p.lower()) for p in parts]
+    while t and t[-1] == (0, 0):   # 1.2 == 1.2.0
+        t.pop()
+    return tuple(t)
+
+
+_PRIMARY_LOC = {"cet": 0, "redmod": 0, "red4ext": 1, "redscript": 2, "tweak": 3, "input": 3, "asi": 3, "archive": 4}
+
+
+def _merge_groups(mods: dict[str, "Mod"], groups: list[list[str]] | None, links: dict | None,
+                  by_link: bool) -> None:
+    """Merge loose mods that belong together (in place). See module docstring, step 4."""
+    loose = [m for m in mods.values() if m.source == "loose"]
+    parent = {m.key: m.key for m in loose}
+
+    def find(k):
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    owner = {}
+    for m in loose:
+        for c in m.components:
+            owner.setdefault(component_path_key(c), m.key)
+    for g in groups or []:
+        keys = {owner[p.lower()] for p in g if p.lower() in owner}
+        first = next(iter(keys), None)
+        for k in keys:
+            union(first, k)
+    via_link = set()
+    if by_link:
+        by_id: dict[int, str] = {}
+        for m in loose:
+            if m.nexus_id:
+                if m.nexus_id in by_id:
+                    union(by_id[m.nexus_id], m.key)
+                    via_link.add(m.nexus_id)
+                else:
+                    by_id[m.nexus_id] = m.key
+
+    clusters: dict[str, list[Mod]] = {}
+    for m in loose:
+        clusters.setdefault(find(m.key), []).append(m)
+    for members in clusters.values():
+        if len(members) < 2:
+            continue
+
+        def rank(m):
+            best = min((_PRIMARY_LOC.get(c.location, 5) - (0.5 if c.is_dir else 0) for c in m.components), default=9)
+            return (best, -sum(c.size for c in m.components), m.key)
+        members.sort(key=rank)
+        primary = members[0]
+        for m in members[1:]:
+            primary.components.extend(m.components)
+            primary.nexus_id = primary.nexus_id or m.nexus_id
+            del mods[m.key]
+        primary.members = sorted(m.key for m in members)
+        versions = [m.version for m in members if m.version]
+        if versions:
+            primary.version = max(versions, key=version_key)
+        if primary.nexus_id in via_link:
+            name = next(((links or {}).get(m.key, {}).get("name") for m in members
+                         if (links or {}).get(m.key, {}).get("name")), None)
+            if name:
+                primary.name = str(name)
+
+
 def component_core_name(c: Component) -> str | None:
     loc_rel = LOCATION_BY_KEY[c.location][1]
     return CORE_COMPONENTS.get(f"{loc_rel}/{c.name}".lower())
@@ -183,8 +272,13 @@ def _read_redmod_info(game_dir: str, c: Component) -> dict:
 
 
 def build_mod_list(game_dir: str, vortex: dict | None = None, mo2_mods: list[dict] | None = None,
-                   links: dict | None = None) -> list[Mod]:
-    """Scan the game folder (+ disabled folder) and return grouped mods."""
+                   links: dict | None = None, groups: list[list[str]] | None = None,
+                   group_by_link: bool = True) -> list[Mod]:
+    """Scan the game folder (+ disabled folder) and return grouped mods.
+
+    ``groups``: lists of component paths (identify.component_paths) that were installed
+    together from one archive. ``group_by_link``: merge loose entries linked to the same
+    Nexus mod into one."""
     if not game_dir:
         return []
     comps = scan_components(game_dir, disabled=False)
@@ -239,6 +333,7 @@ def build_mod_list(game_dir: str, vortex: dict | None = None, mo2_mods: list[dic
         if m is None:
             m = mods[key] = Mod(key=key, name=c.name)
         m.components.append(c)
+        c.member = key
         # Prefer the most descriptive display name: REDmod info > folder name > stem
         if c.location == "redmod":
             info = _read_redmod_info(game_dir, c)
@@ -249,24 +344,30 @@ def build_mod_list(game_dir: str, vortex: dict | None = None, mo2_mods: list[dic
         elif c.is_dir and m.components[0] is not c and not m.components[0].is_dir:
             m.name = c.name
 
+    # 3) Apply user/identified Nexus links
+    def apply_links():
+        for key, link in (links or {}).items():
+            m = mods.get(key)
+            if m and link.get("mod_id"):
+                m.nexus_id = m.nexus_id or int(link["mod_id"])
+                m.version = m.version or link.get("version")
+    apply_links()
+
+    # 4) Merge loose entries known to be one mod
+    _merge_groups(mods, groups, links, group_by_link)
+
     for m in mods.values():
         states = {c.disabled for c in m.components}
         m.enabled = states == {False}
         m.partial = len(states) > 1
 
-    # 3) MO2 mods (virtual)
+    # 5) MO2 mods (virtual)
     for mm in mo2_mods or []:
         key = "mo2:" + mm["name"].lower()
         mods[key] = Mod(key=key, name=mm["name"], source="mo2", enabled=mm["enabled"],
                         nexus_id=mm.get("mod_id"), version=mm.get("version"),
                         manager_ref=mm["name"], files=mm.get("files", []))
-
-    # 4) Apply user/identified Nexus links
-    for key, link in (links or {}).items():
-        m = mods.get(key)
-        if m and link.get("mod_id"):
-            m.nexus_id = m.nexus_id or int(link["mod_id"])
-            m.version = m.version or link.get("version")
+    apply_links()
 
     return sorted(mods.values(), key=lambda m: m.name.lower())
 
