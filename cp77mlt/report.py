@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as _dt
 import os
 
-from . import APP_VERSION, NEXUS_PAGE, logs
+from . import APP_VERSION, NEXUS_PAGE, culprits, logs
 from .scanner import Mod, raw_listing
 
 RULE = "-" * 100
@@ -47,11 +47,19 @@ def generate(path: str, *, game_dir: str, game_version: str, phantom_liberty: bo
         if include_errors:
             flagged = {k: v for k, v in issues.items() if v["errors"]}
             if flagged:
+                idx = culprits.ModIndex(game_dir, mods)
+                by_key = {m.key: m for m in mods}
                 w("\nPotential Errors to Review\n" + "=" * 100 + "\n")
+                blamed = culprits.summarize(idx, flagged, by_key)
+                if blamed:
+                    w("\nMods named in these errors:\n")
+                    for c in [c for c in blamed if c["errors"]][:50]:
+                        w(f"  {_mod_line(by_key[c['key']])}  ({c['errors']} error{'s' if c['errors'] != 1 else ''})\n")
                 for name, data in flagged.items():
                     w(f"\n{name} ({len(data['errors'])}):\n{RULE}\n")
                     for line in data["errors"][:200]:
-                        w(line + "\n")
+                        key = idx.match(line)
+                        w(line + (f"   <-- {by_key[key].name}" if key in by_key else "") + "\n")
                 w("=" * 100 + "\n")
 
         if include_grouped:

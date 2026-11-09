@@ -38,7 +38,7 @@ const SRC = { loose: "Manual", vortex: "Vortex", mo2: "MO2", github: "GitHub" };
 
 const S = {
   boot: null, page: "overview", status: {}, mods: [], summary: {}, sel: new Set(),
-  filter: { q: "", state: "all", source: "all", locs: new Set() }, sort: { key: "name", dir: 1 },
+  filter: { q: "", state: "enabled", source: "all", locs: new Set() }, sort: { key: "name", dir: 1 },
   logSel: null, errorsOnly: false, drawerKey: null, lastReport: null, tasks: {},
 };
 
@@ -169,7 +169,7 @@ function backupsView(d) {
       <td class="num"><button class="btn small" data-restore="${esc(b.path)}">Restore</button> <button class="btn small danger" data-del="${esc(b.path)}" title="Delete this backup">Delete</button></td></tr>`).join("");
   return `<div class="field"><label for="bkSched">Automatic backups</label><div class="bk-sched">
       <select id="bkSched"><option value="off">Off</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select>
-      <span>keep the newest</span><select id="bkKeep">${[3, 5, 10, 20].map((n) => `<option value="${n}" ${n === d.keep ? "selected" : ""}>${n}</option>`).join("")}</select>
+      <span>keep the newest</span><select id="bkKeep">${[1, 3, 5, 10, 20].map((n) => `<option value="${n}" ${n === d.keep ? "selected" : ""}>${n}</option>`).join("")}</select>
       <span class="muted small bk-help">Runs while this tool is open and the game isn't running. If a backup is due when you open the tool, it runs then. Older scheduled backups are deleted past the limit; manual backups are always kept.</span></div></div>
     <div class="field"><label>Saved in</label><div class="bk-folder"><code title="${esc(d.folder)}">${esc(d.folder)}</code>
       <button class="btn small" id="bkOpenDir">Open folder</button><button class="btn small" id="bkDir">Change</button>${d.custom_folder ? `<button class="btn small" id="bkDefault">Use default</button>` : ""}</div></div>
@@ -331,7 +331,7 @@ function renderFooterRun() {
   }
   $("#sbRun").innerHTML = parts.join("");
   const b = $("#sbErr");
-  if (b) b.onclick = () => { S.logSel = (st.logs_with_errors || [])[0] || S.logSel; S.errorsOnly = true; go("logs"); };
+  if (b) b.onclick = () => showLogs((st.logs_with_errors || [])[0] || S.logSel, true);
 }
 function applyRunning(run, valid = true) {
   S.running = run;
@@ -527,10 +527,18 @@ RENDER.overview = async (el) => {
     };
   }
 };
+/* Open the Logs page on a log. Already showing it: do nothing (no reload/flicker). */
+function showLogs(name, errorsOnly) {
+  const same = S.page === "logs" && S.logSel === name && (errorsOnly === undefined || !!S.errorsOnly === errorsOnly);
+  if (same) { closeDrawer(); return; }
+  S.logSel = name;
+  if (errorsOnly !== undefined) S.errorsOnly = errorsOnly;
+  if (S.page === "logs") { closeDrawer(); RENDER.logs($("#page")); } else go("logs");
+}
 function wireCommon(el) {
   $$("[data-go]", el).forEach((b) => (b.onclick = () => go(b.dataset.go)));
   $$("[data-url]", el).forEach((b) => (b.onclick = () => call("open_url", b.dataset.url)));
-  $$("[data-log]", el).forEach((b) => (b.onclick = () => { S.logSel = b.dataset.log; go("logs"); }));
+  $$("[data-log]", el).forEach((b) => (b.onclick = () => showLogs(b.dataset.log)));
   $$("[data-mod]", el).forEach((b) => (b.onclick = async () => { await go("mods"); openDrawer(b.dataset.mod); }));
 }
 
@@ -690,8 +698,8 @@ RENDER.mods = async (el) => {
     </div>
     <div class="subbar"><div class="chips" id="locChips"></div><div class="btn-row">
       <div class="seg" id="segView">
-        <button data-v="mods" title="Groups individual mods which are installed in multiple folders/files as one viewable mod.">Grouped Mods</button>
-        <button data-v="folders" title="Does not group mod files/folders as one mod, they all show up as a toggleable/individual mod in its own row.">Ungrouped Mods</button></div>
+        <button data-v="mods" title="Groups mods with files which are installed in multiple folders as one mod.">Grouped Mods</button>
+        <button data-v="folders" title="Does not group mods with files which are installed in multiple folders as one mod. Lists every file in a row from each folder.">Ungrouped Mods</button></div>
       <button class="btn" id="btnInstall" title="Install a mod from a .zip, .7z or .rar you downloaded">Install mod</button>
       <button class="btn" id="btnMore" aria-haspopup="true">More actions</button></div></div>
     <table class="table" id="modsTable"><thead><tr>
@@ -708,7 +716,7 @@ RENDER.mods = async (el) => {
   }));
   const installDone = async (res) => {
     const n = res.displaced?.length;
-    toast(`Installed ${plural(res.installed.length, "file")}.${n ? res.overwritten ? ` ${plural(n, "existing file")} overwritten.` : ` ${plural(n, "replaced file")} backed up to the disabled folder.` : ""}`, "ok", 7000);
+    toast(`Installed ${plural(res.installed.length, "file")}.${n ? res.overwritten ? ` ${plural(n, "existing file")} overwritten.` : (S.boot.settings.replaced_keep === 0 ? ` ${plural(n, "old file")} replaced.` : ` ${plural(n, "old file")} replaced (a copy is kept in Settings → Replaced files).`) : ""}`, "ok", 7000);
     await refreshMods(true); renderModsTable();
   };
   $("#btnInstall").onclick = async () => startTask(await call("install_archive", "mod"), installDone);
@@ -858,13 +866,36 @@ function renderBulk() {
   if (!keys.length) { host.innerHTML = ""; return; }
   host.innerHTML = `<div class="bulk"><b>${keys.length} selected</b>
     <button class="btn" id="bkOn">Enable</button><button class="btn" id="bkOff">Disable</button>
+    ${keys.length > 1 ? `<button class="btn" id="bkGrp" title="Treat the selected entries as one mod, for example a mod that isn't on Nexus">Group as one mod</button>` : ""}
     <button class="btn" id="bkExp">Export as preset</button><button class="btn" id="bkId">Find on Nexus</button>
     <button class="btn primary" id="bkClr">Clear selection</button></div>`;
   $("#bkOn").onclick = () => toggleMods(keys, true);
   $("#bkOff").onclick = () => toggleMods(keys, false);
   $("#bkExp").onclick = exportPreset(keys);
   if ($("#bkId")) $("#bkId").onclick = () => runIdentify(keys);
+  if ($("#bkGrp")) $("#bkGrp").onclick = () => groupSelected(keys);
   $("#bkClr").onclick = () => { S.sel.clear(); renderModsTable(); };
+}
+function groupSelected(keys) {
+  const picked = keys.map((k) => S.mods.find((m) => m.key === k)).filter(Boolean);
+  const managed = picked.filter((m) => m.source !== "loose");
+  if (managed.length) return toast(`${esc(managed[0].name)} is managed by ${SRC[managed[0].source]}. Only manually installed mods can be grouped.`, "bad", 6000);
+  const guess = [...picked].sort((a, b) => b.size - a.size)[0];
+  modal(`<h3>Group ${picked.length} entries as one mod</h3>
+    <p class="muted">They'll be listed, counted, enabled and disabled as a single mod. Use this for mods that aren't on Nexus, or pieces that weren't grouped automatically. You can ungroup it later from its side pane.</p>
+    <div class="files" style="max-height:140px;margin-bottom:12px">${esc(picked.map((m) => m.name).join("\n"))}</div>
+    <label for="grpName" class="muted small">Name</label>
+    <input type="text" id="grpName" style="width:100%" value="${esc(guess.name)}">
+    <div class="btn-row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="grpOk">Group</button></div>`, (m, close) => {
+    const go2 = async () => {
+      const r = await call("group_mods", keys, $("#grpName", m).value);
+      if (!result(r, `Grouped as ${r.name}.`)) return;
+      close(); S.sel.clear(); await refreshMods(true); renderModsTable();
+    };
+    $("#grpOk", m).onclick = go2;
+    $("#grpName", m).onkeydown = (e) => { if (e.key === "Enter") go2(); };
+    setTimeout(() => $("#grpName", m).select(), 30);
+  });
 }
 function exportPreset(keys) {
   return async () => {
@@ -915,6 +946,7 @@ function openDrawer(key) {
         <button class="btn" id="dOpen">Open folder</button>
         ${m.update?.update && m.enabled ? `<button class="btn primary" id="dUpd">Update to ${esc(m.update.latest)}</button>` : (m.nexus_id && signedIn) || m.github ? `<button class="btn" id="dChk">Check for update</button>` : ""}
       </div>
+      ${(() => { const c = (S.culprits || []).find((x) => x.key === m.key && x.errors); return c ? `<div class="note warn drawer-err"><span><b>${plural(c.errors, "error")}</b> in ${esc(c.logs.join(", "))} from the last game session${c.changed_since ? " (changed since, relaunch to check)" : ""}.</span><button class="btn small primary" id="dFix">Fix</button></div>` : ""; })()}
       <h4>Details</h4>
       <dl class="kv">
         <dt>Installed version</dt><dd>${esc(m.version || m.link?.version || m.update?.installed || "Unknown")}${!m.version && !m.link?.version && m.update?.basis === "estimated" ? " <span class='muted'>(estimated from file dates)</span>" : ""}</dd>
@@ -937,7 +969,7 @@ function openDrawer(key) {
           <div class="btn-row"><button class="btn small" data-url="https://github.com/${esc(m.github.repo)}/releases">Releases</button><button class="btn small danger" id="dGhUnlink">Unlink</button></div></div>`
         : `<div class="inline-form"><input type="text" id="dGh" placeholder="For mods released on GitHub: paste the repository URL" aria-label="GitHub repository URL"><button class="btn" id="dGhBtn">Link</button></div>`}` : ""}
 
-      <h4>Files (${files.length})${m.grouped ? ` <span class="muted small">· ${m.components.length} parts grouped as one mod</span>` : ""}</h4>
+      <h4>Files (${files.length})${m.grouped ? ` <span class="muted small">· ${m.components.length} parts grouped as one mod</span>` : ""}${m.manual_group ? ` <button class="link small" id="dUngroup" title="Split this back into separate entries">Ungroup</button>` : ""}</h4>
       ${filesHtml}
     </div>`;
   d.classList.add("open");
@@ -949,6 +981,11 @@ function openDrawer(key) {
   if ($("#dToggle")) $("#dToggle").onclick = () => toggleMods([key], !(m.enabled && !m.partial));
   if ($("#dPage")) $("#dPage").onclick = () => call("open_url", `https://www.nexusmods.com/cyberpunk2077/mods/${m.nexus_id}`);
   if ($("#dUpd")) $("#dUpd").onclick = () => doUpdate(key, refresh);
+  if ($("#dFix")) $("#dFix").onclick = () => openFix(key);
+  if ($("#dUngroup")) $("#dUngroup").onclick = async () => {
+    if (!result(await call("ungroup_mod", key), "Ungrouped.")) return;
+    closeDrawer(); await refreshMods(true); if ($("#modsTable")) renderModsTable();
+  };
   if ($("#dChk")) $("#dChk").onclick = async () => startTask(await call("nexus_check_updates", [key]), refresh);
   if ($("#dUnlink")) $("#dUnlink").onclick = async () => { if (result(await call("nexus_unlink", key), "Link removed.")) refresh(); };
   if ($("#dLinkBtn")) $("#dLinkBtn").onclick = async () => {
@@ -975,10 +1012,9 @@ async function loadHero(key) {
   const host = $("#dHero"), n = r.nexus, g = r.github;
   if (n && n.name) {
     host.innerHTML = `<div class="hero">${n.picture_url ? `<img src="${esc(n.picture_url)}" alt="" class="${n.contains_adult_content ? "adult" : ""}">` : ""}
-      <div class="hero-body"><b>${esc(n.name)}</b><span class="muted small">by ${esc(n.author || "unknown")} · v${esc(n.version || "?")}${n.endorsement_count != null ? ` · ${Number(n.endorsement_count).toLocaleString()} endorsements` : ""}${n.updated_timestamp ? ` · updated ${fmtDate(n.updated_timestamp)}` : ""}</span>
-      <p>${esc((n.summary || "").replace(/<[^>]+>/g, ""))}</p>
-      <button class="link small" id="dImgs">See all images on Nexus</button></div></div>`;
-    $("#dImgs").onclick = () => call("open_url", `https://www.nexusmods.com/cyberpunk2077/mods/${n.mod_id}?tab=images`);
+      <div class="hero-body"><button class="link plain hero-name" id="dNxName" title="Open on Nexus Mods">${esc(n.name)}</button><span class="muted small">by ${esc(n.author || "unknown")} · v${esc(n.version || "?")}${n.endorsement_count != null ? ` · ${Number(n.endorsement_count).toLocaleString()} endorsements` : ""}${n.updated_timestamp ? ` · updated ${fmtDate(n.updated_timestamp)}` : ""}</span>
+      <p>${esc((n.summary || "").replace(/<[^>]+>/g, ""))}</p></div></div>`;
+    $("#dNxName").onclick = () => call("open_url", `https://www.nexusmods.com/cyberpunk2077/mods/${n.mod_id}`);
   } else if (n && n.error) {
     host.innerHTML = `<p class="muted small">${esc(n.error)}</p>`;
   }
@@ -994,14 +1030,15 @@ RENDER.core = async (el) => {
   const manualOk = ["EquipmentEx", "Redscript", "Cyber Engine Tweaks"];
   el.innerHTML = `<div class="core-list">${r.core.map((c) => `
     <div class="core ${c.installed ? "" : c.disabled ? "disabledc missing" : "missing"}">
-      <h3>${esc(c.name)}</h3><span class="state">${c.installed ? "Installed" : c.disabled ? "Disabled" : "Missing"}</span>
+      <h3><button class="link plain core-name" data-url="https://www.nexusmods.com/cyberpunk2077/mods/${c.nexus_id}" title="Open ${esc(c.name)} on Nexus Mods">${esc(c.name)}</button></h3><span class="state">${c.installed ? "Installed" : c.disabled ? "Disabled" : "Missing"}</span>
       <p>${esc(c.desc)}</p>
       <div class="ver">${esc(c.version || (c.installed ? "Version unknown" : "—"))}${c.version_source === "manual" ? "<small>entered by you</small>" : ""}
-        ${c.update?.update ? `<small style="color:var(--yellow)">${esc(c.update.latest)} available</small>` : ""}</div>
+        ${c.update?.update ? `<small style="color:var(--yellow)">${esc(c.update.latest)} available</small>`
+          : c.installed && c.update && c.update.update === false ? `<small class="uptodate" title="Checked against Nexus${c.update.latest ? `: latest is ${esc(c.update.latest)}` : ""}">✔ Up to date</small>` : ""}</div>
       <div></div>
       <div class="acts">
         ${c.update?.update ? `<button class="btn small primary" data-coreupd="${esc(c.name)}">Update to ${esc(c.update.latest)}</button>` : ""}
-        <button class="btn small ${c.installed ? "" : "primary"}" data-url="https://www.nexusmods.com/cyberpunk2077/mods/${c.nexus_id}${c.installed ? "" : "?tab=files"}">${c.installed ? "Nexus page" : "Download"}</button>
+        ${c.installed ? "" : `<button class="btn small primary" data-url="https://www.nexusmods.com/cyberpunk2077/mods/${c.nexus_id}?tab=files">Download</button>`}
         ${c.installed && manualOk.includes(c.name) && c.version_source !== "file" ? `<button class="btn small" data-ver="${esc(c.name)}">Set version</button>` : ""}
       </div>
     </div>`).join("")}</div>
@@ -1031,7 +1068,7 @@ RENDER.logs = async (el) => {
   el.classList.add("fill");
   if (!r.logs.length) { el.innerHTML = `<div class="panel"><div class="empty"><b>No logs yet</b>Logs appear after you launch the game with the frameworks installed.</div></div>`; return; }
   if (!S.logSel || !r.logs.some((l) => l.name === S.logSel)) S.logSel = (r.logs.find((l) => l.errors) || r.logs[0]).name;
-  el.innerHTML = `<div class="logs"><div class="loglist">${r.logs.map((l) => `<button data-n="${esc(l.name)}" class="${l.name === S.logSel ? "on" : ""}">
+  el.innerHTML = `<div id="culprits"></div><div class="logs"><div class="loglist">${r.logs.map((l) => `<button data-n="${esc(l.name)}" class="${l.name === S.logSel ? "on" : ""}">
       ${esc(l.name)}<small>${esc(l.file)} · ${new Date(l.modified * 1000).toLocaleString()}</small>
       <small>${l.errors ? `<span class="e">${plural(l.errors, "error")}</span> ` : ""}${l.warnings ? `<span class="w">${plural(l.warnings, "warning")}</span>` : ""}${!l.errors && !l.warnings ? "Clean" : ""}</small></button>`).join("")}</div>
     <div class="viewer"><div class="vt"><b id="lvName"></b><span class="grow" style="flex:1"></span>
@@ -1046,13 +1083,98 @@ RENDER.logs = async (el) => {
     $("#lvName").textContent = current.name;
     const lines = S.errorsOnly ? current.lines.filter((l) => l.k) : current.lines;
     const pre = $("#lvText");
-    pre.innerHTML = lines.length ? lines.map((l) => `<div class="${l.k || ""}">${esc(l.t) || " "}</div>`).join("") : `<div class="muted">No errors or warnings in this log.</div>`;
+    pre.innerHTML = lines.length ? lines.map((l) => `<div class="${l.k || ""}">${esc(l.t) || " "}${l.m ? `<button class="lmod" data-k="${esc(l.m)}" title="Show this mod">${esc(l.mn)}</button>` : ""}</div>`).join("") : `<div class="muted">No errors or warnings in this log.</div>`;
+    $$(".lmod", pre).forEach((b) => (b.onclick = () => (drawerShows(b.dataset.k) ? closeDrawer() : openDrawer(b.dataset.k))));
     const first = $("div.error", pre); if (first && !S.errorsOnly) first.scrollIntoView({ block: "center" });
   }
   $("#lvOpen").onclick = () => current && call("open_path", current.path);
-  $("#lvCopy").onclick = () => current && navigator.clipboard.writeText(current.lines.map((l) => l.t).join("\n")).then(() => toast("Log copied.", "ok", 2000));
+  $("#lvCopy").onclick = () => {
+    if (!current) return;
+    const lines = S.errorsOnly ? current.lines.filter((l) => l.k) : current.lines;
+    navigator.clipboard.writeText(lines.map((l) => l.t).join("\n"))
+      .then(() => toast(S.errorsOnly ? `Copied ${plural(lines.length, "error/warning line")}.` : "Log copied.", "ok", 2500));
+  };
   showLog();
+  renderCulprits();
 };
+
+/* mods named in log errors */
+async function loadCulprits() {
+  const r = await call("log_culprits");
+  S.culprits = r && r.ok ? r.culprits : [];
+  renderCulprits(true);
+  return S.culprits;
+}
+async function renderCulprits(cached = false) {
+  if (!$("#culprits")) return;
+  if (!cached) return loadCulprits();
+  const host = $("#culprits");
+  const list = (S.culprits || []).filter((c) => c.errors);
+  if (!list.length) { host.innerHTML = ""; return; }
+  host.innerHTML = `<div class="panel culprits"><h2>Mods named in errors <span class="hint">${plural(list.length, "mod")} · from the last game session</span></h2>
+    <div class="crows">${list.map((c) => `<div class="crow" data-k="${esc(c.key)}">
+      <button class="link plain cname" title="Show files and details"><b>${esc(c.name)}</b></button>
+      <span class="cerr">${plural(c.errors, "error")}</span>${c.warnings ? ` <span class="muted small">${plural(c.warnings, "warning")}</span>` : ""}
+      <span class="muted small">in ${esc(c.logs.join(", "))}</span>
+      ${!c.enabled ? `<span class="tag">Disabled</span>` : ""}${c.update?.update ? `<span class="tag upd-tag">Update ${esc(c.update.latest)}</span>` : ""}
+      ${c.changed_since ? `<span class="tag" title="Its files changed after this log was written. Launch the game again to see if the error is gone.">Changed since: relaunch to check</span>` : ""}
+      <button class="btn small ${c.enabled ? "primary" : ""}" data-fix="${esc(c.key)}">Fix</button></div>`).join("")}</div></div>`;
+  $$(".crow", host).forEach((row) => {
+    const k = row.dataset.k;
+    $(".cname", row).onclick = () => (drawerShows(k) ? closeDrawer() : openDrawer(k));
+    $("[data-fix]", row).onclick = () => openFix(k);
+  });
+}
+function bugReportText(c) {
+  const g = S.boot.game || {};
+  return [`${c.name}${c.version ? ` v${c.version}` : ""} shows errors in ${c.logs.join(", ")}.`,
+    `Game version: ${g.version || "unknown"}`, "", "Log lines:", ...c.lines.slice(0, 10), "",
+    "(Found with Cyberpunk 2077 Mod List Tool)"].join("\n");
+}
+function openFix(key) {
+  const c = (S.culprits || []).find((x) => x.key === key);
+  if (!c) return;
+  const signed = !!S.boot.nexus.user;
+  const u = c.update;
+  const again = async () => { await refreshMods(true); await loadCulprits(); if (drawerShows(key)) openDrawer(key); if ((S.culprits || []).some((x) => x.key === key)) openFix(key); };
+  let upd;
+  if (u?.update) upd = `<button class="btn primary" id="fxUpd">Update to ${esc(u.latest)}</button><p>A newer version is out. Updating is the most likely fix.</p>`;
+  else if ((c.nexus_id && signed) || c.github) upd = u ? `<button class="btn" id="fxChk">Check again</button><p>Up to date${u.installed ? ` (${esc(u.installed)})` : ""}, so updating won't fix this.</p>`
+    : `<button class="btn primary" id="fxChk">Check for update</button><p>See whether a newer version is available.</p>`;
+  else if (c.nexus_id) upd = `<button class="btn" data-go="nexus">Connect Nexus</button><p>Log in to Nexus to check this mod for updates.</p>`;
+  else upd = `<button class="btn" id="fxLink">Find it on Nexus</button><p>This mod isn't linked to a Nexus page yet, so updates can't be checked.</p>`;
+  const dis = c.source === "vortex" ? `<button class="btn" disabled>Disable mod</button><p>Vortex manages this mod. Disable it in Vortex.</p>`
+    : c.enabled ? `<button class="btn danger" id="fxOff">Disable mod</button><p>Turns it off without deleting anything. Its files move to <b>Temporarily Disabled Mods</b>. You can enable it again any time.</p>`
+      : `<button class="btn" disabled>Disabled</button><p>Already off. The error is from a session when it was still on.</p>`;
+  const bugUrl = c.nexus_id ? `https://www.nexusmods.com/cyberpunk2077/mods/${c.nexus_id}?tab=bugs` : c.github ? `https://github.com/${c.github}/issues` : null;
+  const bug = bugUrl ? `<button class="btn" id="fxBug">Report a bug</button><p>Opens the mod's ${c.nexus_id ? "Bugs tab on Nexus" : "GitHub issues"} and copies the error lines and your game version, ready to paste.</p>`
+    : `<button class="btn" disabled>Report a bug</button><p>Link the mod to Nexus or GitHub to report it to the author.</p>`;
+  modal(`<h3>Fix ${esc(c.name)}</h3>
+    <p class="muted">${plural(c.errors, "error")} in ${esc(c.logs.join(", "))}${c.version ? ` · installed ${esc(c.version)}` : ""}.</p>
+    ${c.changed_since ? `<div class="note">This mod changed after the log was written. Launch the game again first to see if it's already fixed.</div>` : ""}
+    <div class="fix-err"><div class="files" style="max-height:150px;white-space:pre-wrap;word-break:break-word">${esc(c.lines.slice(0, 6).join("\n"))}</div>
+      <button class="btn small" id="fxCopy" title="Copy every error line for this mod">Copy errors</button></div>
+    <div class="fix-opts"><div>${upd}</div><div>${dis}</div><div>${bug}</div></div>
+    <div class="btn-row"><button class="btn" data-close>Close</button></div>`, (m, close) => {
+    wireCommon(m);
+    $("#fxCopy", m).onclick = () => navigator.clipboard.writeText(c.lines.join("\n"))
+      .then(() => toast(`Copied ${plural(c.lines.length, "error line")}.`, "ok", 2500));
+    if ($("#fxUpd", m)) $("#fxUpd", m).onclick = () => { close(); doUpdate(key, async () => { await loadCulprits(); if (drawerShows(key)) openDrawer(key); }); };
+    if ($("#fxChk", m)) $("#fxChk", m).onclick = async () => { close(); startTask(await call("nexus_check_updates", [key]), again); };
+    if ($("#fxLink", m)) $("#fxLink", m).onclick = () => { close(); openDrawer(key); };
+    if ($("#fxOff", m)) $("#fxOff", m).onclick = async () => {
+      close();
+      if (result(await call("set_mods_enabled", [key], false), `${esc(c.name)} disabled. Launch the game to check the error is gone.`)) {
+        await refreshMods(true); await loadCulprits(); if (drawerShows(key)) openDrawer(key);
+        if ($("#modsTable")) renderModsTable();
+      }
+    };
+    if ($("#fxBug", m)) $("#fxBug", m).onclick = () => {
+      const open = () => call("open_url", bugUrl);
+      navigator.clipboard.writeText(bugReportText(c)).then(() => { toast("Error details copied. Paste them into the bug report.", "ok", 6000); open(); }, open);
+    };
+  });
+}
 
 /* ------------------------------------------------------------------ NEXUS */
 RENDER.nexus = async (el) => {
@@ -1263,13 +1385,12 @@ async function openBrowseDrawer(id) {
   if (!r.ok) { $("header h3", d).textContent = r.error; return; }
   const m = r.mod;
   d.innerHTML = `<button class="close" aria-label="Close">×</button>
-    <header><h3>${esc(m.name)}</h3><span class="muted">by ${esc(m.author || "unknown")}</span>${r.installed_key ? ` <span class="src loose" style="margin-left:6px">Installed</span>` : ""}</header>
+    <header><h3><button class="link plain hero-name" id="bName" title="Open on Nexus Mods">${esc(m.name)}</button></h3><span class="muted">by ${esc(m.author || "unknown")}</span>${r.installed_key ? ` <span class="src loose" style="margin-left:6px">Installed</span>` : ""}</header>
     <div class="body">
       <div class="hero">${m.picture_url ? `<img src="${esc(m.picture_url)}" alt="" class="${m.contains_adult_content ? "adult" : ""}">` : ""}
         <div class="hero-body"><span class="muted small">v${esc(m.version || "?")} · ♥ ${Number(m.endorsement_count || 0).toLocaleString()}${m.updated_timestamp ? ` · updated ${fmtDate(m.updated_timestamp)}` : ""}</span>
         <p>${esc((m.summary || "").replace(/<[^>]+>/g, ""))}</p></div></div>
       <div class="btn-row"><button class="btn" id="bPage">Open on Nexus</button>
-        <button class="btn" id="bImgs" title="Nexus's API only provides the main picture. This opens the mod's full image gallery.">All images</button>
         ${r.installed_key ? `<button class="btn" id="bLocal">Show installed mod</button>` : ""}
         <label class="check" style="margin-left:6px"><input type="checkbox" id="bTrack">Track</label></div>
       <h4>Files</h4>
@@ -1281,7 +1402,7 @@ async function openBrowseDrawer(id) {
     </div>`;
   $(".close", d).onclick = closeDrawer;
   $("#bPage").onclick = () => call("open_url", m.url);
-  $("#bImgs").onclick = () => call("open_url", m.url + "?tab=images");
+  $("#bName").onclick = () => call("open_url", m.url);
   if ($("#bLocal")) $("#bLocal").onclick = async () => { await go("mods"); openDrawer(r.installed_key); };
   const tr = $("#bTrack");
   tr.checked = !!S.mods.find((x) => x.nexus_id === id && x.tracked);
@@ -1341,9 +1462,12 @@ RENDER.settings = async (el) => {
       <p class="muted" style="margin-top:-4px;max-width:85ch">Full backups of your manually installed mods and core frameworks. Vortex and MO2 keep their own copies, so their mods aren't included.</p>
       <div id="setBackups"><p class="muted">Loading backups…</p></div>
       <h3 class="sub-h">Replaced files</h3>
-      <p class="muted" style="max-width:85ch">When installing or updating a mod would overwrite files, the old files are moved to
-        <b>Temporarily Disabled Mods\\_Backups (replaced files)</b> instead of being deleted, so you can roll back if an update breaks something.
-        Older builds called this folder <b>_superseded</b>.</p>
+      <p class="muted" style="max-width:85ch">Updating a mod replaces its files in the game folder, so only the new version loads. The old files are moved to
+        <b>Temporarily Disabled Mods\\_Backups (replaced files)</b>, which the game never loads, so you can roll back if an update breaks something.
+        Only the most recent updates are kept, and older copies are deleted automatically.</p>
+      <div class="field"><label for="repKeep">Keep old files from</label><select id="repKeep">
+        <option value="1">The last update only</option><option value="3">The last 3 updates</option><option value="10">The last 10 updates</option>
+        <option value="-1">Every update (never delete)</option><option value="0">None: delete old files when updating</option></select></div>
       <div class="upd-strip"><p id="bkInfo">Checking…</p><button class="btn small" id="bkOpen">Open folder</button><button class="btn small danger" id="bkClear">Delete replaced files</button></div>
     </div>
     <div class="panel" style="margin-top:18px"><h2>Linking mods to Nexus</h2>
@@ -1367,6 +1491,8 @@ RENDER.settings = async (el) => {
   $("#pickDir").onclick = pickGameDir;
   renderSettingsBackups();
   const bk = await call("backups_info");
+  $("#repKeep").value = String(s.replaced_keep ?? 1);
+  $("#repKeep").onchange = async (e) => { const r = await call("save_settings", { replaced_keep: +e.target.value }); if (r.ok) { S.boot.settings = r.settings; toast("Saved.", "ok", 1500); RENDER.settings(el); } };
   $("#bkInfo").textContent = bk.files ? `${plural(bk.files, "file")} from ${plural(bk.sets, "install")}, ${fmtSize(bk.size)}.` : "Nothing has been replaced yet.";
   $("#bkOpen").disabled = $("#bkClear").disabled = !bk.files;
   $("#bkOpen").onclick = async () => result(await call("open_backups"));
@@ -1417,6 +1543,7 @@ async function start() {
   });
   if (S.boot.game.valid) { msg("Reading your mods…"); await refreshMods(); }
   await go(S.boot.game.valid ? "overview" : "settings");
+  if (S.boot.game.valid) loadCulprits();   // lets the mod side pane offer Fix on any page
   $("#splash").classList.add("done");
   setTimeout(() => $("#splash")?.remove(), 400);
   poll();

@@ -378,7 +378,7 @@ def test_rar_export_passes_utf8_list(game, tmp_path, monkeypatch):
     fake.write_text(
         "import sys, os\n"
         "args = sys.argv[1:]\n"
-        "out = args[args.index('-y') + 2] if '-scfl' in args else args[args.index('-y') + 2]\n"
+        "out = [a for a in args[1:] if not a.startswith(('-', '@'))][0]\n"
         "lst = [a for a in args if a.startswith('@')]\n"
         "if lst:\n"
         "    assert '-scfl' in args, 'list charset must be UTF-8'\n"
@@ -672,3 +672,149 @@ def test_tracked_list_is_cached_between_page_visits(monkeypatch):
     assert {d["mod_id"] for d in c.tracked()} == {2}
     c.tracked(fresh=True)
     assert hits.count("GET") == 2
+
+
+# --- naming the mod behind a log error -------------------------------------------------
+def test_log_lines_are_attributed_to_mods(game):
+    from cp77mlt import culprits
+    touch(game, "archive/pc/mod/Marmur_bank_removal.archive")
+    touch(game, "archive/pc/mod/Marmur_bank_removal.xl")
+    touch(game, "bin/x64/plugins/cyber_engine_tweaks/mods/NiceCET/init.lua")
+    touch(game, "red4ext/plugins/CoolPlugin/CoolPlugin.dll")
+    touch(game, "archive/pc/mod/Clothes/sub_folder_item.archive")
+    mods = build_mod_list(game)
+    by = {m.key: m for m in mods}
+    idx = culprits.ModIndex(game, mods)
+    name = lambda line: by[idx.match(line)].name if idx.match(line) else None  # noqa: E731
+    assert name("[2026-11-08 22:38:26.759] [30504] [error] [WorldStreaming] Marmur_bank_removal.xl: "
+                "The target node #389 has type worldCookedStaticMeshNode, but the mod expects worldStaticMeshNode.") \
+        == "Marmur_bank_removal"
+    assert norm_key(name("ERROR - At r6/scripts/VirtualAtelier/Atelier.reds:12:5: function 'X' not found")) == "virtualatelier"
+    assert name(r"[error] C:\Games\Cyberpunk 2077\bin\x64\plugins\cyber_engine_tweaks\mods\NiceCET\init.lua:3: attempt to index nil") == "NiceCET"
+    assert name("[error] Plugin 'CoolPlugin' failed to load") == "CoolPlugin"
+    assert name("[error] Can't load sub_folder_item.archive") == "Clothes"
+    assert name("[error] r6/tweaks/BetterLoot.yaml: unknown record") == "BetterLoot"
+    assert name("[error] [ArchiveXL] EquipmentEx.archive.xl: something") is None      # core frameworks never blamed
+    assert name("[error] [WorldStreaming] something unrelated happened") is None
+    assert name("[error] mods/AnyCET/init.lua failed") is None                          # generic file name only
+
+
+def test_culprit_summary_counts_per_mod(game):
+    from cp77mlt import culprits
+    mods = build_mod_list(game)
+    issues = {"Redscript": {"path": "x", "errors": ["ERROR - r6/scripts/VirtualAtelier/a.reds: bad", "ERROR - r6/tweaks/BetterLoot.yaml bad",
+                                                    "ERROR - r6/scripts/VirtualAtelier/b.reds: bad"], "warnings": []}}
+    out = culprits.summarize(culprits.ModIndex(game, mods), issues, {m.key: m for m in mods})
+    assert [(norm_key(c["name"]), c["errors"]) for c in out] == [("virtualatelier", 2), ("betterloot", 1)]
+    assert out[0]["logs"] == ["Redscript"] and len(out[0]["lines"]) == 2
+
+
+def test_report_names_mod_next_to_error(game, tmp_path):
+    touch(game, "r6/logs/redscript_rCURRENT.log", "ERROR - At r6/scripts/VirtualAtelier/Atelier.reds:1:1: oops\n")
+    mods = build_mod_list(game)
+    out = report.generate(str(tmp_path / "r.txt"), game_dir=game, game_version="2.3", phantom_liberty=True, store="Steam",
+                          mods=mods, core=[], log_names=[], include_errors=True, include_disabled=False, manager=None)
+    text = open(out, encoding="utf-8-sig").read()
+    assert "Mods named in these errors:" in text and "oops   <-- VirtualAtelier" in text
+
+
+def test_replaced_files_are_pruned_to_the_last_updates(game):
+    base = os.path.join(game, TEMP_DISABLED_DIR, ops.BACKUP_DIR_NAME)
+    for stamp in ("20260101-000000", "20260201-000000", "20260301-000000", "20260401-000000"):
+        touch(base, f"{stamp}/archive/pc/mod/Old.archive")
+    assert ops.prune_backups(game, 2) == 2
+    assert sorted(os.listdir(base)) == ["20260301-000000", "20260401-000000"]
+    assert ops.prune_backups(game, -1) == 0 and len(os.listdir(base)) == 2
+    ops.prune_backups(game, 0)
+    assert not os.path.exists(base)
+    assert os.path.exists(os.path.join(game, TEMP_DISABLED_DIR, "archive", "pc", "mod", "OldThing.archive"))  # disabled mods untouched
+
+
+def test_update_task_prunes_replaced_files(game, tmp_path):
+    from cp77mlt.api import Api
+    api = Api(Config(str(tmp_path / "s.json")))
+    api._cfg.set("game_dir", game)
+    api._cfg.set("replaced_keep", 1)
+    base = os.path.join(game, TEMP_DISABLED_DIR, ops.BACKUP_DIR_NAME)
+    for stamp in ("20260101-000000", "20260201-000000"):
+        touch(base, f"{stamp}/archive/pc/mod/Old.archive")
+    r = api._task("update", lambda prog, c: {})
+    import time as _t
+    for _ in range(100):
+        if api.get_task(r["task"])["done"]:
+            break
+        _t.sleep(0.02)
+    assert os.listdir(base) == ["20260201-000000"]
+
+
+def _fake_rar(tmp_path, body):
+    fake = tmp_path / "rar.py"
+    fake.write_text("import sys, os\nargs = sys.argv[1:]\nout = [a for a in args[1:] if not a.startswith(('-', '@'))][0]\n" + body)
+    if sys.platform == "win32":
+        w = tmp_path / "rar.cmd"
+        w.write_text(f'@"{sys.executable}" "{fake}" %*\r\n')
+    else:
+        w = tmp_path / "rar"
+        w.write_text(f'#!/bin/sh\n"{sys.executable}" "{fake}" "$@"\n')
+        w.chmod(0o755)
+    return str(w)
+
+
+def test_rar_export_retries_with_utf16_list(game, tmp_path, monkeypatch):
+    rar = _fake_rar(tmp_path, "if '-scfl' in args:\n    print('RAR 7.12 x64   Copyright (c) 1993-2025 Alexander Roshal')\n    sys.exit(7)\n"
+                              "lst = [a for a in args if a.startswith('@')]\n"
+                              "if lst:\n    assert open(lst[0][1:], encoding='utf-16').read().split()\n"
+                              "open(out, 'ab').write(b'x' * 100)\n")
+    monkeypatch.setattr(ops, "find_rar", lambda: rar)
+    out = str(tmp_path / "p.rar")
+    assert ops.export_preset(game, [m for m in build_mod_list(game) if m.enabled], out)["files"] > 3
+    assert os.path.exists(out)
+
+
+def test_rar_failure_message_is_readable(game, tmp_path, monkeypatch):
+    rar = _fake_rar(tmp_path, "print('RAR 7.12 x64   Copyright (c) 1993-2025 Alexander Roshal   23 Jun 2025')\n"
+                              "print('Trial version             Type \\'rar -?\\' for help')\nsys.exit(6)\n")
+    monkeypatch.setattr(ops, "find_rar", lambda: rar)
+    with pytest.raises(RuntimeError) as e:
+        ops.export_preset(game, [m for m in build_mod_list(game) if m.enabled], str(tmp_path / "p.rar"))
+    msg = str(e.value)
+    assert "couldn't open" in msg and "Copyright" not in msg and "Choose .zip" in msg
+    assert not os.path.exists(str(tmp_path / "p.rar.partial"))
+
+
+def test_debug_log_keeps_only_last_24_hours(tmp_path):
+    import time as _t
+    p = tmp_path / "cp77mlt.log"
+    now = _t.time()
+    stamp = lambda age_h: _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(now - age_h * 3600))  # noqa: E731
+    p.write_text(f"{stamp(50)},1 ERROR cp77mlt: Task export failed\nTraceback (most recent call last):\n  old frame\n"
+                 f"{stamp(1)},2 INFO cp77mlt: Starting\n{stamp(0.5)},3 ERROR cp77mlt: new\n  new frame\n", encoding="utf-8")
+    old = tmp_path / "cp77mlt.log.1"
+    old.write_text("ancient", encoding="utf-8")
+    os.utime(old, (now - 72 * 3600, now - 72 * 3600))
+    logs.trim_debug_log(str(p), 24, now)
+    text = p.read_text(encoding="utf-8")
+    assert "export failed" not in text and "old frame" not in text
+    assert "Starting" in text and "new frame" in text
+    assert not old.exists()
+
+
+def test_manual_grouping_of_off_nexus_mods(game, tmp_path):
+    from cp77mlt.api import Api
+    api = Api(Config(str(tmp_path / "s.json")))
+    api._cfg.set("game_dir", game)
+    api._ensure_scan()
+    n = len(api._mods)
+    keys = [m.key for m in api._mods if norm_key(m.name) in ("cooljacket", "betterloot")]
+    r = api.group_mods(keys, "Jacket Pack")
+    assert r["ok"] and len(api._mods) == n - 1
+    g = api._mods_by_key[r["key"]]
+    assert g.name == "Jacket Pack" and g.manual_group and set(g.locations()) == {"archive", "tweak"}
+    api._sig = None
+    api._ensure_scan(force=True)                       # survives a rescan
+    assert any(m.name == "Jacket Pack" for m in api._mods)
+    vortex = next(m.key for m in api._mods if m.source == "vortex")
+    assert api.group_mods([vortex, r["key"]])["ok"] is False
+    assert api.ungroup_mod(r["key"])["ok"] and len(api._mods) == n
+    other = next(m.key for m in api._mods if m.source == "loose")
+    assert api.ungroup_mod(other)["ok"] is False      # nothing to ungroup

@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 
-from . import APP_NAME, APP_VERSION, NEXUS_PAGE, backups, core_mods, game, github, identify, logs, managers, nexus, nxm, ops, report, secure
+from . import APP_NAME, APP_VERSION, NEXUS_PAGE, backups, culprits, core_mods, game, github, identify, logs, managers, nexus, nxm, ops, report, secure
 from .config import Config, app_data_dir, documents_dir
 from .scanner import TEMP_DISABLED_DIR, Mod, build_mod_list, dir_signature
 from .scanner import component_path_key as scanner_key
@@ -101,6 +101,8 @@ class Api:
         def run():
             try:
                 state["result"] = fn(progress, lambda: state["cancel"])
+                if name in ("install", "update", "restore"):
+                    self._prune_replaced()
             except InterruptedError:
                 state["error"] = "Cancelled."
             except Exception as e:  # surfaced to the UI
@@ -203,8 +205,10 @@ class Api:
         allowed = {"auto_open_output", "auto_select_all_logs", "include_errors_in_output",
                    "include_disabled_in_output", "manager_mode", "launch_via", "mo2_profile",
                    "mo2_executable", "nexus_check_on_start", "output_dir", "auto_track", "include_grouped_in_output", "ask_report_path", "queue_include_disabled",
-                   "backup_schedule", "backup_keep", "group_mod_files", "mods_view"}
+                   "backup_schedule", "backup_keep", "group_mod_files", "mods_view", "replaced_keep"}
         self._cfg.update({k: v for k, v in values.items() if k in allowed})
+        if "replaced_keep" in values:
+            self._prune_replaced()
         if "group_mod_files" in values:
             self._sig = None
         if {"manager_mode", "mo2_profile"} & set(values):
@@ -293,7 +297,8 @@ class Api:
                 mo2_mods = []
         mods = build_mod_list(gd, vortex, mo2_mods, self._cfg.get("nexus_links"),
                               groups=self._cfg.get("install_groups"),
-                              group_by_link=bool(self._cfg.get("group_mod_files")))
+                              group_by_link=bool(self._cfg.get("group_mod_files")),
+                              manual_groups=self._cfg.get("manual_groups"))
         for m in mods:  # native plugins carry their own version (RedHotTools, Input Loader, ...)
             if m.source == "loose" and not m.version:
                 for c in m.components:
@@ -437,8 +442,49 @@ class Api:
         except OSError as e:
             return _err(str(e))
         lines = text.splitlines()
-        return {"ok": True, "name": name, "path": p,
-                "lines": [{"t": ln, "k": logs.classify(ln)} for ln in lines]}
+        idx = self._mod_index()
+        names = {m.key: m.name for m in self._mods}
+        out = []
+        for ln in lines:
+            k = logs.classify(ln)
+            row = {"t": ln, "k": k}
+            if k and idx:
+                key = idx.match(ln)
+                if key in names:
+                    row["m"], row["mn"] = key, names[key]
+            out.append(row)
+        return {"ok": True, "name": name, "path": p, "lines": out}
+
+    def _mod_index(self):
+        """Index of installed mod files for naming the mod behind a log line (rebuilt after rescans)."""
+        try:
+            self._ensure_scan()
+        except RuntimeError:
+            return None
+        if getattr(self, "_idx_sig", None) != (self._sig, id(self._mods)):
+            self._idx = culprits.ModIndex(self.game_dir, self._mods)
+            self._idx_sig = (self._sig, id(self._mods))
+        return self._idx
+
+    def log_culprits(self) -> dict:
+        """Mods named in the current logs' errors/warnings, with what can be done about each."""
+        idx = self._mod_index()
+        if idx is None:
+            return _err("Set your Cyberpunk 2077 folder in Settings first.")
+        gd = self.game_dir
+        disabled_root = os.path.join(gd, TEMP_DISABLED_DIR)
+        gh = self._cfg.get("github_links") or {}
+        out = []
+        for c in culprits.summarize(idx, self._issue_cache.issues(gd), self._mods_by_key):
+            m = self._mods_by_key[c["key"]]
+            newest = identify.newest_mtime(gd, m, disabled_root) if m.source != "mo2" else 0
+            out.append({**{k: v for k, v in c.items() if k != "log_mtime"},
+                        "source": m.source, "enabled": m.enabled, "nexus_id": m.nexus_id,
+                        "github": (gh.get(m.key) or {}).get("repo"), "version": m.version,
+                        "update": self._updates.get(m.key),
+                        # changed after the log was written (updated/reinstalled): relaunch to see if it's fixed
+                        "changed_since": bool(newest and c["log_mtime"] and newest > c["log_mtime"] + 60)})
+        return {"ok": True, "culprits": out, "signed_in": bool(self._nexus)}
 
     # ------------------------------------------------------------- report
     def generate_report(self, log_names: list[str]) -> dict:
@@ -839,6 +885,56 @@ class Api:
             if d and os.path.isdir(d):
                 return d
         return ""
+
+    def group_mods(self, keys: list[str], name: str = "") -> dict:
+        """Treat several entries as one mod (for mods that aren't on Nexus, or any that weren't
+        grouped automatically). Remembered by file path, so it survives rescans."""
+        try:
+            self._ensure_scan()
+        except RuntimeError as e:
+            return _err(str(e))
+        mods = [self._mods_by_key[k] for k in keys or [] if k in self._mods_by_key]
+        if any(m.source != "loose" for m in mods):
+            return _err("Only manually installed mods can be grouped. Vortex and MO2 mods are grouped by their manager.")
+        if len(mods) < 2:
+            return _err("Select at least two mods to group.")
+        paths = {scanner_key(c) for m in mods for c in m.components}
+        name = (name or "").strip() or max(mods, key=lambda m: sum(c.size for c in m.components)).name
+        keep = []
+        for g in self._cfg.get("manual_groups") or []:
+            if paths & set(g.get("paths") or []):   # grouping into an existing group extends it
+                paths |= set(g["paths"])
+            else:
+                keep.append(g)
+        keep.append({"name": name, "paths": sorted(paths)})
+        self._cfg.set("manual_groups", keep)
+        with self._scan_lock:
+            self._rescan()
+        new = next((m for m in self._mods if any(scanner_key(c) in paths for c in m.components)), None)
+        return {"ok": True, "key": new.key if new else None, "name": name}
+
+    def ungroup_mod(self, key: str) -> dict:
+        m = self._mods_by_key.get(key)
+        if not m:
+            return _err("Mod not found.")
+        mine = {scanner_key(c) for c in m.components}
+        groups = self._cfg.get("manual_groups") or []
+        left = [g for g in groups if not mine & set(g.get("paths") or [])]
+        if len(left) == len(groups):
+            return _err("This mod was grouped automatically, not by you. Turn off grouping in Settings to split it.")
+        self._cfg.set("manual_groups", left)
+        with self._scan_lock:
+            self._rescan()
+        return {"ok": True}
+
+    def _prune_replaced(self) -> None:
+        """Old files moved aside by installs/updates are kept for the last few updates only."""
+        try:
+            keep = int(self._cfg.get("replaced_keep"))
+        except (TypeError, ValueError):
+            keep = 1
+        if game.is_valid_game_dir(self.game_dir):
+            ops.prune_backups(self.game_dir, keep)
 
     def _remember_install_group(self, installed: list[str]) -> None:
         """Files installed from one archive are one mod, whatever folders they land in."""

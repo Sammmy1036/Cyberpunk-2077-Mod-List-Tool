@@ -42,7 +42,10 @@ def setup_logging() -> None:
     import logging
     from logging.handlers import RotatingFileHandler
     from cp77mlt.config import app_data_dir
-    h = RotatingFileHandler(os.path.join(app_data_dir(), "cp77mlt.log"), maxBytes=512 * 1024, backupCount=2,
+    from cp77mlt.logs import trim_debug_log
+    log_path = os.path.join(app_data_dir(), "cp77mlt.log")
+    trim_debug_log(log_path, 24)   # only keep the last day, so old errors don't linger
+    h = RotatingFileHandler(log_path, maxBytes=512 * 1024, backupCount=2,
                             encoding="utf-8")
     h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger("cp77mlt")

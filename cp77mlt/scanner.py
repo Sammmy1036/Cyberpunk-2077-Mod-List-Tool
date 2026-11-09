@@ -96,6 +96,7 @@ class Mod:
     manager_ref: str | None = None     # vortex staging folder / mo2 mod name
     files: list[str] = field(default_factory=list)  # for MO2 mods (virtual)
     members: list[str] = field(default_factory=list)  # keys of the loose entries merged into this one
+    manual_group: bool = False                         # grouped by the user (can be ungrouped)
 
     def locations(self) -> list[str]:
         return sorted({c.location for c in self.components})
@@ -114,6 +115,7 @@ class Mod:
             "files": self.files[:200],
             "members": self.members or [self.key],
             "grouped": len(self.members) > 1,
+            "manual_group": self.manual_group,
             "file_count": len(self.files) if self.source == "mo2" else
             sum(len(c.rel_paths) if not c.is_dir else _count_files_hint(c) for c in self.components),
         }
@@ -273,7 +275,7 @@ def _read_redmod_info(game_dir: str, c: Component) -> dict:
 
 def build_mod_list(game_dir: str, vortex: dict | None = None, mo2_mods: list[dict] | None = None,
                    links: dict | None = None, groups: list[list[str]] | None = None,
-                   group_by_link: bool = True) -> list[Mod]:
+                   group_by_link: bool = True, manual_groups: list[dict] | None = None) -> list[Mod]:
     """Scan the game folder (+ disabled folder) and return grouped mods.
 
     ``groups``: lists of component paths (identify.component_paths) that were installed
@@ -354,7 +356,16 @@ def build_mod_list(game_dir: str, vortex: dict | None = None, mo2_mods: list[dic
     apply_links()
 
     # 4) Merge loose entries known to be one mod
-    _merge_groups(mods, groups, links, group_by_link)
+    manual = [g for g in manual_groups or [] if g.get("paths")]
+    _merge_groups(mods, list(groups or []) + [g["paths"] for g in manual], links, group_by_link)
+    for g in manual:   # the name the user gave a hand-made group
+        paths = {p.lower() for p in g["paths"]}
+        for m in mods.values():
+            if m.source == "loose" and any(component_path_key(c) in paths for c in m.components):
+                m.manual_group = True
+                if g.get("name"):
+                    m.name = str(g["name"])
+                break
 
     for m in mods.values():
         states = {c.disabled for c in m.components}

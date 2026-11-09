@@ -43,6 +43,10 @@ touch("bin/x64/plugins/cyber_engine_tweaks/cyber_engine_tweaks.log", "[info] CET
 touch("r6/logs/redscript_rCURRENT.log", "INFO - redscript compiler v0.5.27\n" + "INFO - compiled\n" * 30 +
       "ERROR - At r6/scripts/OldHud/hud.reds:12:5: function 'GetHUD' not found\nWARN - unused variable\n" + "INFO - done\n" * 10)
 touch("mods/redmod.stub", "")
+touch("red4ext/plugins/ArchiveXL/ArchiveXL.log", "[2026-11-08 22:38:20.001] [30504] [info] ArchiveXL 1.21 is initializing...\n"
+      "[2026-11-08 22:38:26.759] [30504] [error] [WorldStreaming] NightCityLUT.archive.xl: The target node #389 has type "
+      "worldCookedStaticMeshNode, but the mod expects worldStaticMeshNode.\n"
+      "[2026-11-08 22:38:26.760] [30504] [error] [WorldStreaming] NightCityLUT.archive.xl: The target node #390 is missing.\n")
 touch("red4ext/logs/red4ext.log", "[2026-11-06 20:01:02.123] [RED4ext] [info] RED4ext (v1.27.0) is initializing...\n" * 8 +
       "[2026-11-06 20:01:03.000] [RED4ext] [warning] Plugin 'Foo' targets an older runtime\n")
 # loose mods

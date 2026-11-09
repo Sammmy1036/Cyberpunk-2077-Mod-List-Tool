@@ -276,9 +276,13 @@ input:focus, select:focus { border-color: var(--yellow); outline: none; }
 .core .state { font-size: 12px; align-self: start; padding: 2px 8px; background: var(--bone); color: var(--black); }
 .core.missing .state { background: var(--red); }
 .core.disabledc .state { background: var(--graphite); color: var(--bone); }
+.core .core-name { font: inherit; color: inherit; text-align: left; }
+.core .core-name:hover, .hero-name:hover { color: var(--yellow); text-decoration: underline; }
+.hero-name { font: inherit; font-weight: 600; color: inherit; text-align: left; padding: 0; }
+.core .ver small.uptodate { color: var(--green); }
 .core p { grid-column: 1 / -1; margin: 2px 0 8px; color: var(--bone-dim); font-size: 13px; }
 .core .ver { font-family: var(--font-cond); font-size: 22px; }
-.core .ver small { font-family: var(--font); font-size: 12px; color: var(--bone-dim); margin-left: 6px; }
+.core .ver small { font-family: var(--font); font-size: 12px; color: var(--bone-dim); margin-left: 6px; white-space: nowrap; display: inline-block; }
 .core .acts { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------------------------------------------------------------- logs */
@@ -299,6 +303,22 @@ input:focus, select:focus { border-color: var(--yellow); outline: none; }
 .viewer pre div.warning { background: rgba(252,238,10,.06); color: #F4EC9A; }
 .page.fill { display: flex; flex-direction: column; }
 .page.fill > .logs { flex: 1; min-height: 0; }
+.culprits { margin-bottom: 18px; }
+.culprits .crows { max-height: 168px; overflow: auto; }
+.crow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid var(--graphite); }
+.crow:first-child { border-top: 0; }
+.crow .btn { margin-left: auto; }
+.crow .cerr { color: var(--red); font-size: 13px; }
+.tag.upd-tag { border-color: var(--yellow); color: var(--yellow); }
+.lmod { margin-left: 10px; font: 11px var(--font); padding: 0 6px; border: 1px solid var(--cyan); color: var(--cyan); background: none; cursor: pointer; vertical-align: 1px; }
+.lmod:hover { background: rgba(19,226,245,.12); }
+.fix-err { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 14px; }
+.fix-err .files { flex: 1; }
+.drawer-err { display: flex; align-items: center; gap: 12px; }
+.drawer-err .btn { margin-left: auto; flex: none; }
+.fix-opts { display: grid; gap: 10px; margin-bottom: 4px; }
+.fix-opts > div { display: grid; grid-template-columns: 170px 1fr; gap: 14px; align-items: center; }
+.fix-opts p { margin: 0; color: var(--bone-dim); font-size: 13px; }
 
 /* ---------------------------------------------------------------- nexus */
 .user { display: flex; align-items: center; gap: 14px; }

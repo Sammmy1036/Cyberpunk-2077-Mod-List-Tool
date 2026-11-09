@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -70,6 +71,26 @@ def clear_backups(game_dir: str) -> int:
         shutil.rmtree(d, ignore_errors=True)
         n += 1
     return n
+
+
+def prune_backups(game_dir: str, keep: int) -> int:
+    """Keep the replaced files of the newest ``keep`` installs/updates, delete older ones.
+    keep < 0 keeps everything; 0 keeps nothing. Returns how many sets were deleted."""
+    if keep is None or keep < 0:
+        return 0
+    base = os.path.join(game_dir, TEMP_DISABLED_DIR, BACKUP_DIR_NAME)
+    try:
+        sets = sorted((e.path for e in os.scandir(base) if e.is_dir()), reverse=True)  # names are timestamps
+    except OSError:
+        return 0
+    old = sets[keep:]
+    for d in old:
+        shutil.rmtree(d, ignore_errors=True)
+    if keep == 0:
+        for d in backup_dirs(game_dir):    # legacy _superseded too
+            shutil.rmtree(d, ignore_errors=True)
+    cleanup_empty_dirs(os.path.join(game_dir, TEMP_DISABLED_DIR))
+    return len(old)
 
 
 def _park(game_dir: str, path: str, rel: str, bucket: str | None = None) -> str:
@@ -339,7 +360,7 @@ def export_preset(game_dir: str, mods: list[Mod], save_path: str, progress: Prog
     ext = os.path.splitext(save_path)[1].lower()
     tmp_out = save_path + ".partial"
     try:
-        if ext == ".7z" and _has_py7zr():
+        if ext == ".7z" and _has_py7zr() and not find_7z():
             import py7zr
             with py7zr.SevenZipFile(tmp_out, "w") as z:
                 z.writestr(json.dumps(manifest, indent=2), PRESET_MANIFEST)
@@ -369,8 +390,12 @@ def export_preset(game_dir: str, mods: list[Mod], save_path: str, progress: Prog
 
 
 def _has_py7zr() -> bool:
-    import importlib.util
-    return importlib.util.find_spec("py7zr") is not None
+    """True only if py7zr really imports (a build can find the package but miss its compiled parts)."""
+    try:
+        import py7zr  # noqa: F401
+        return True
+    except Exception:
+        return False
 
 
 def export_formats() -> list[str]:
@@ -402,16 +427,26 @@ def _export_with_cli(game_dir: str, files: list[str], manifest: dict, out_path: 
             cmds = [[tool, "a", "-t7z", "-y", "-scsUTF-8", out_path, f"@{listfile}"],
                     [tool, "a", "-t7z", "-y", out_path, man]]
         else:
-            # -scfl: the list file is UTF-8 (v3.0 passed -scul = UTF-16, so WinRAR found "No files")
-            cmds = [[tool, "a", "-y", "-scfl", out_path, f"@{listfile}"],
-                    [tool, "a", "-y", "-ep", out_path, man]]
+            # WinRAR names archives by extension, so pack to a real .rar in the temp folder.
+            # The list file is UTF-8 (-scfl); older WinRAR builds that reject that get UTF-16 (-scul).
+            rar_out = os.path.join(work, "preset.rar")
+            list16 = os.path.join(work, "files16.txt")
+            with open(list16, "w", encoding="utf-16", newline="\r\n") as f:
+                f.write("\n".join(rel.replace("/", "\\") for rel in files) + "\n")
+            cmds = [[tool, "a", "-y", "-idq", "-scfl", rar_out, f"@{listfile}"],
+                    [tool, "a", "-y", "-idq", "-ep", rar_out, man]]
         for i, cmd in enumerate(cmds):
             r = subprocess.run(cmd, cwd=game_dir, capture_output=True, text=True, errors="replace",
                                creationflags=_no_window())
+            if r.returncode > 1 and ext == ".rar" and i == 0:   # retry once with a UTF-16 list file
+                alt = [tool, "a", "-y", "-idq", "-scul", rar_out, f"@{list16}"]
+                r = subprocess.run(alt, cwd=game_dir, capture_output=True, text=True, errors="replace",
+                                   creationflags=_no_window())
             if r.returncode > 1:   # 0 ok, 1 warnings
-                msg = (r.stdout + r.stderr).strip()
-                raise RuntimeError(f"{'7-Zip' if ext == '.7z' else 'WinRAR'} failed: {msg[-400:]}")
+                raise RuntimeError(_pack_error(ext, r.returncode, (r.stdout + "\n" + r.stderr)))
             progress(0.6 + 0.4 * i, "Adding preset info")
+        if ext == ".rar":
+            shutil.move(rar_out, out_path)
         for cand in (out_path, out_path + ext):     # rar/7z may append the extension to ".partial"
             if os.path.exists(cand):
                 if cand != out_path:
@@ -423,6 +458,22 @@ def _export_with_cli(game_dir: str, files: list[str], manifest: dict, out_path: 
             raise RuntimeError("The archive came out empty.")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+_RAR_CODES = {2: "a fatal error", 3: "a damaged file", 5: "a write error (is the disk full?)",
+              6: "a file it couldn't open (is the game or another program using it?)",
+              7: "an unsupported option (update WinRAR)", 8: "not enough memory", 9: "it couldn't create the archive",
+              10: "no files to add", 11: "a wrong password", 255: "it was cancelled"}
+
+
+def _pack_error(ext: str, code: int, output: str) -> str:
+    """Readable packer error. WinRAR's own output starts with a banner that says nothing useful."""
+    lines = [ln.strip() for ln in output.splitlines() if ln.strip() and not re.match(
+        r"^(RAR|UNRAR|7-Zip)\b.*Copyright|^Trial version|^Type 'rar -\?'|^Evaluation copy", ln.strip(), re.I)]
+    tool = "7-Zip" if ext == ".7z" else "WinRAR"
+    why = _RAR_CODES.get(code, f"error code {code}") if ext == ".rar" else f"error code {code}"
+    detail = (" " + " ".join(lines)[-300:]) if lines else ""
+    return f"{tool} stopped with {why}.{detail} Choose .zip to export without it."
 
 
 def import_preset(game_dir: str, archive: str, progress: Progress = _noop, overwrite: bool = False) -> dict:

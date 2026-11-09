@@ -47,7 +47,9 @@ DEFAULTS: dict = {
     "install_groups": [],             # component paths installed together from one archive (one mod)
     "group_mod_files": True,          # merge separate pieces linked to the same Nexus mod into one entry
     "mods_view": "mods",              # Mods page layout: mods | folders
-    "last_install_dir": "",           # where the Install mod dialog opens ("" = Downloads)
+    "last_install_dir": "",
+    "replaced_keep": 1,               # replaced-file sets kept after updates: -1 all, 0 none, N newest
+    "manual_groups": [],              # [{name, paths[]}] mods the user grouped by hand (e.g. off-Nexus mods)           # where the Install mod dialog opens ("" = Downloads)
     "github_links": {},             # mod key -> {repo: "owner/name", version?}             # track mods on Nexus when they get linked     # nxm handler before we registered (restored on unregister)
     "migrated_from_registry": False,
 }
@@ -167,6 +169,6 @@ class Config:
         with self._lock:
             out = {k: copy.deepcopy(v) for k, v in self.data.items()
                    if k not in ("nexus_api_key", "install_records", "nexus_links", "nexus_suggestions",
-                                "nexus_rejected", "nxm_previous_handler", "github_links", "install_groups")}
+                                "nexus_rejected", "nxm_previous_handler", "github_links", "install_groups", "manual_groups")}
             out["output_dir_effective"] = self.data.get("output_dir") or documents_dir()
             return out

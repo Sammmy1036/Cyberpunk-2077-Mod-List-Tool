@@ -85,6 +85,40 @@ def extract_issues(path: str) -> dict:
     return {"errors": errors, "warnings": warnings}
 
 
+def trim_debug_log(path: str, max_age_hours: float = 24.0, now: float | None = None) -> None:
+    """Drop entries older than ``max_age_hours`` from the tool's own debug log (and its rotated
+    copies), so it only shows recent problems. Lines that don't start with a timestamp
+    (tracebacks) stay with the entry above them."""
+    import time
+    from datetime import datetime
+    cutoff = (now or time.time()) - max_age_hours * 3600
+    for i, p in enumerate([path] + [f"{path}.{n}" for n in (1, 2, 3)]):
+        if not os.path.isfile(p):
+            continue
+        try:
+            if os.path.getmtime(p) < cutoff:
+                os.remove(p) if i else open(p, "w").close()
+                continue
+            with open(p, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+        except OSError:
+            continue
+        out, keep = [], True
+        for ln in lines:
+            try:
+                keep = datetime.strptime(ln[:19], "%Y-%m-%d %H:%M:%S").timestamp() >= cutoff
+            except ValueError:
+                pass   # continuation line: same fate as its entry
+            if keep:
+                out.append(ln)
+        if len(out) != len(lines):
+            try:
+                with open(p, "w", encoding="utf-8") as f:
+                    f.writelines(out)
+            except OSError:
+                pass
+
+
 class IssueCache:
     """Re-parses a log only when its mtime/size changes, so polling is cheap."""
 
