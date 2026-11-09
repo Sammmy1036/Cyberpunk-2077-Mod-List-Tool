@@ -1467,7 +1467,7 @@ RENDER.settings = async (el) => {
         Only the most recent updates are kept, and older copies are deleted automatically.</p>
       <div class="field"><label for="repKeep">Keep old files from</label><select id="repKeep">
         <option value="1">The last update only</option><option value="3">The last 3 updates</option><option value="10">The last 10 updates</option>
-        <option value="-1">Every update (never delete)</option><option value="0">None: delete old files when updating</option></select></div>
+        <option value="-1">Every update (never delete)</option><option value="0">None (Delete old files when updating)</option></select></div>
       <div class="upd-strip"><p id="bkInfo">Checking…</p><button class="btn small" id="bkOpen">Open folder</button><button class="btn small danger" id="bkClear">Delete replaced files</button></div>
     </div>
     <div class="panel" style="margin-top:18px"><h2>Linking mods to Nexus</h2>
