@@ -151,6 +151,7 @@ class Api:
                 self._cfg.set("game_dir", found[0]["path"])
                 gd = found[0]["path"]
         self._restore_nexus()
+        nexus.health.start_polling()
         return {
             "app": {"name": APP_NAME, "version": APP_VERSION, "nexus_page": NEXUS_PAGE},
             "settings": self._cfg.public(),
@@ -624,6 +625,12 @@ class Api:
         return {"ok": True, "user": self._nexus_user, "has_key": bool(self._nexus),
                 "rate": self._nexus.rate if self._nexus else None}
 
+    def nexus_health(self, refresh: bool = False) -> dict:
+        """Nexus service status for the UI: status-page summary plus failures the app saw itself."""
+        if refresh:
+            nexus.health.refresh(force=True)
+        return {"ok": True, **nexus.health.snapshot()}
+
     def _client(self) -> nexus.NexusClient:
         if not self._nexus:
             raise RuntimeError("Log in to Nexus Mods first (Nexus page).")
@@ -762,6 +769,7 @@ class Api:
         st = {"running": self.get_running(), "valid": game.is_valid_game_dir(gd)}
         self._process_inbox()
         st["nxm_tasks"] = self._drain_nxm_tasks()
+        st["nexus_health"] = nexus.health.snapshot()
         if not st["valid"]:
             return st
         changed = False
@@ -1601,7 +1609,7 @@ class Api:
             tmpdir = tempfile.mkdtemp(prefix="cp77mlt_dl_")
             tmp = os.path.join(tmpdir, name)
             try:
-                nexus.download(links[0]["URI"], tmp, lambda f, msg: prog(f * 0.5, f"Downloading {msg}"), cancelled)
+                nexus.download_any(links, tmp, lambda f, msg: prog(f * 0.5, f"Downloading {msg}"), cancelled)
                 target = self._mods_by_key.get(key_hint) if key_hint and not key_hint.startswith("core:") else None
                 if target is None and not (key_hint or "").startswith("core:"):
                     target = next((x for x in self._mods if x.source == "loose" and x.nexus_id == mod_id), None)

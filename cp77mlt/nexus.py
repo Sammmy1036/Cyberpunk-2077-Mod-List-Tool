@@ -23,6 +23,7 @@ import uuid
 import requests
 
 from . import APP_NAME, APP_VERSION
+from .nexus_health import NexusServiceError, diagnose, health, host_of
 
 API = "https://api.nexusmods.com/v1"
 GRAPHQL = "https://api.nexusmods.com/v2/graphql"
@@ -83,7 +84,14 @@ class NexusClient:
         try:
             r = self.session.request(method, API + path, timeout=20, **kw)
         except requests.RequestException as e:
-            raise NexusError(f"Could not reach Nexus Mods: {e}") from e
+            d = diagnose(API, e, what="The Nexus Mods API")
+            health.record_failure(d)
+            raise NexusError(d["message"]) from e
+        if r.status_code >= 500:
+            d = diagnose(API, status=r.status_code, what="The Nexus Mods API")
+            health.record_failure(d)
+            raise NexusError(d["message"])
+        health.record_success(host_of(API))
         for hdr, key in (("X-RL-Daily-Remaining", "daily"), ("X-RL-Hourly-Remaining", "hourly")):
             if hdr in r.headers:
                 try:
@@ -630,6 +638,39 @@ def sso_login(open_browser, timeout: float = 300.0) -> str:
         raise NexusError("Timed out waiting for Nexus login.")
     finally:
         ws.close()
+
+
+def download_any(links: list[dict], dest: str, progress=None, cancelled=lambda: False) -> str:
+    """Download from the first mirror that works. Nexus returns several CDN mirrors per file;
+    a single dead node shouldn't fail the whole update. Raises NexusServiceError with a
+    diagnosis (Nexus's side vs. the user's) when every mirror fails."""
+    tried, last = [], None
+    for link in links:
+        url = link.get("URI") or ""
+        if not url:
+            continue
+        try:
+            download(url, dest, progress, cancelled)
+            health.record_success(host_of(url))
+            return dest
+        except InterruptedError:
+            raise
+        except requests.HTTPError as e:
+            last = (url, e, e.response.status_code if e.response is not None else None)
+        except requests.RequestException as e:
+            last = (url, e, None)
+        tried.append(link.get("short_name") or link.get("name") or host_of(url))
+    if last is None:
+        raise RuntimeError("Nexus returned no download link.")
+    url, exc, status = last
+    if status is not None and status < 500:
+        raise RuntimeError(f"Nexus refused the download (HTTP {status}). Open the mod page and download it there.")
+    d = diagnose(url, exc, status, what="Nexus's download servers", plural=True)
+    if len(tried) > 1:
+        d["message"] += f" (Tried {len(tried)} mirrors: {', '.join(tried)}.)"
+    d["mirrors"] = tried
+    health.record_failure(d)
+    raise NexusServiceError(d) from exc
 
 
 def download(url: str, dest: str, progress=None, cancelled=lambda: False) -> str:

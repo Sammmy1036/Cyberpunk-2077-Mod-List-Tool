@@ -818,3 +818,73 @@ def test_manual_grouping_of_off_nexus_mods(game, tmp_path):
     assert api.ungroup_mod(r["key"])["ok"] and len(api._mods) == n
     other = next(m.key for m in api._mods if m.source == "loose")
     assert api.ungroup_mod(other)["ok"] is False      # nothing to ungroup
+
+
+# -- Nexus service health -------------------------------------------------------------------
+def _refused():
+    import requests
+    return requests.ConnectionError("HTTPSConnectionPool(host='la-premium.nexus-cdn.com', port=443): Max retries exceeded "
+                                    "(Caused by NewConnectionError('Failed to establish a new connection: [WinError 10061] "
+                                    "No connection could be made because the target machine actively refused it'))")
+
+
+def test_health_refused_with_internet_is_nexus_side():
+    from cp77mlt import nexus_health as nh
+    d = nh.diagnose("https://la-premium.nexus-cdn.com/d6/x", _refused(), what="Nexus's download servers",
+                    probe=lambda: True, sinkhole=lambda h: False)
+    assert d["where"] == "nexus" and d["reason"] == "connection refused"
+    assert "Nexus's end" in d["message"] and "la-premium.nexus-cdn.com" in d["message"]
+
+
+def test_health_offline_and_dns_blocked_are_local():
+    from cp77mlt import nexus_health as nh
+    url = "https://la-premium.nexus-cdn.com/x"
+    assert nh.diagnose(url, _refused(), probe=lambda: False, sinkhole=lambda h: False)["where"] == "offline"
+    assert nh.diagnose(url, _refused(), probe=lambda: True, sinkhole=lambda h: True)["where"] == "local"
+    assert nh.diagnose(url, status=503, probe=lambda: True, sinkhole=lambda h: False)["where"] == "nexus"
+
+
+def test_health_snapshot_levels():
+    from cp77mlt import nexus_health as nh
+    page = {"indicator": "minor", "description": "Partially Degraded Service", "incidents": [],
+            "components": [{"name": "API", "status": "degraded_performance"}, {"name": "CDN", "status": "operational"}]}
+    h = nh.Health(fetch=lambda: page)
+    h.refresh(force=True)
+    s = h.snapshot()
+    assert s["level"] == "degraded" and s["official"]["summary"] == "API: degraded performance"
+    h.record_failure(nh.diagnose("https://la-premium.nexus-cdn.com/x", _refused(), probe=lambda: True, sinkhole=lambda h: False))
+    assert h.snapshot()["level"] == "down"
+    h.record_success("api.nexusmods.com")          # a different host working doesn't clear a CDN failure
+    assert h.snapshot()["level"] == "down"
+    h.record_success("la-premium.nexus-cdn.com")
+    assert h.snapshot()["level"] == "degraded"
+
+
+def test_download_falls_back_to_next_mirror(tmp_path, monkeypatch):
+    seen = []
+
+    def fake_download(url, dest, progress=None, cancelled=lambda: False):
+        seen.append(url)
+        if "la-premium" in url:
+            raise _refused()
+        open(dest, "wb").write(b"ok")
+        return dest
+    monkeypatch.setattr(nexus, "download", fake_download)
+    links = [{"short_name": "Los Angeles", "URI": "https://la-premium.nexus-cdn.com/a"},
+             {"short_name": "Amsterdam", "URI": "https://ams-premium.nexus-cdn.com/a"}]
+    out = nexus.download_any(links, str(tmp_path / "f.zip"))
+    assert open(out, "rb").read() == b"ok" and len(seen) == 2
+
+
+def test_download_all_mirrors_dead_reports_nexus_side(tmp_path, monkeypatch):
+    from cp77mlt import nexus_health as nh
+    monkeypatch.setattr(nexus, "download", lambda *a, **k: (_ for _ in ()).throw(_refused()))
+    monkeypatch.setattr(nh, "internet_ok", lambda: True)
+    monkeypatch.setattr(nh, "sinkholed", lambda h: False)
+    monkeypatch.setattr(nexus, "diagnose", lambda *a, **k: nh.diagnose(*a, probe=lambda: True, sinkhole=lambda h: False, **k))
+    links = [{"short_name": "Los Angeles", "URI": "https://la-premium.nexus-cdn.com/a"}]
+    with pytest.raises(nh.NexusServiceError) as e:
+        nexus.download_any(links, str(tmp_path / "f.zip"))
+    assert e.value.diagnosis["where"] == "nexus" and "Nexus's end" in str(e.value)
+    assert nh.health.snapshot()["level"] == "down"
+    nh.health.record_success()

@@ -274,9 +274,47 @@ async function pickGameDir() {
 }
 
 /* ------------------------------------------------------------------ status polling */
+/* ------------------------------------------------------------------ Nexus service health */
+// The backend tells problems on Nexus's end apart from problems on the user's PC/network:
+//   down     = Nexus isn't responding (seen by the app) or a major outage on the status page
+//   degraded = the status page reports degraded performance / an incident
+//   local    = the user's connection or a DNS filter is blocking Nexus
+const NXH_LABEL = { down: "Nexus: service issue", degraded: "Nexus Mods Status: Degraded", local: "Nexus: can't connect" };
+function nexusHealthBanner(h) {
+  h = h || S.nexusHealth;
+  if (!h || h.level === "ok") return "";
+  const ob = h.observed, of = h.official;
+  const title = ob ? ob.title : "Nexus Mods is reporting problems";
+  const lead = ob ? esc(ob.message)
+    : `Nexus's status page reports: <b>${esc(of.summary)}</b>. Downloads, update checks and linking may be slow or fail. This is on Nexus's end, not your PC.`;
+  const inc = (of?.incidents || []).map((i) => `<li><a href="#" data-nxurl="${esc(i.url)}">${esc(i.name)}</a> <span class="muted">(${esc(i.status)})</span></li>`).join("");
+  const official = ob && of ? `<p class="small" style="margin:6px 0 0">Nexus status page: ${esc(of.summary)}</p>` : "";
+  return `<div class="note nxh-banner ${h.level}" role="status"><b>${esc(title)}</b><div>${lead}</div>${official}
+    ${inc ? `<ul class="small" style="margin:6px 0 0">${inc}</ul>` : ""}
+    <p class="small" style="margin:6px 0 0"><a href="#" data-nxurl="${esc(h.status_page)}">Nexus status page</a>${h.level !== "local" ? " · <a href=\"#\" data-nxurl=\"https://discord.gg/nexusmods\">Nexus Discord</a>" : ""}</p></div>`;
+}
+function wireNexusLinks(root) { $$("[data-nxurl]", root).forEach((a) => (a.onclick = (e) => { e.preventDefault(); call("open_url", a.dataset.nxurl); })); }
+function renderNexusHealth(h) {
+  const prev = S.nexusHealth;
+  S.nexusHealth = h || null;
+  const sb = $("#sbNexus");
+  if (sb) {
+    const bad = h && h.level !== "ok";
+    sb.hidden = !bad;
+    sb.className = `nxh ${bad ? h.level : ""}`;
+    sb.textContent = bad ? NXH_LABEL[h.level] : "";
+    sb.title = bad ? (h.observed?.message || h.official?.summary || "") + " Click for the Nexus status page." : "";
+    sb.onclick = (e) => { e.preventDefault(); call("open_url", h?.status_page || "https://nexusmods.statuspage.io"); };
+  }
+  // refresh in-page banners only when something changed
+  if (JSON.stringify(prev) === JSON.stringify(h)) return;
+  $$(".nxh-slot").forEach((slot) => { slot.innerHTML = nexusHealthBanner(h); wireNexusLinks(slot); });
+}
+
 async function poll() {
   const st = await call("get_status");
   S.status = st || {};
+  if ("nexus_health" in S.status) renderNexusHealth(S.status.nexus_health);
   applyRunning(st.running || {}, st.valid);
   renderFooterRun();
   const nx = st.nxm_tasks || {};
@@ -472,7 +510,7 @@ RENDER.overview = async (el) => {
   const total = Math.max(sm.total, 1);
   const logs = lg.logs || [];
   const auto = S.boot.settings.auto_select_all_logs;
-  el.innerHTML = `<div class="panel upd-panel" id="updPanel"></div><div class="grid cols-2">
+  el.innerHTML = `<div class="nxh-slot">${nexusHealthBanner()}</div><div class="panel upd-panel" id="updPanel"></div><div class="grid cols-2">
     <div class="panel">
       <div class="readout">
         <div class="bignum" aria-label="${sm.enabled} mods enabled">${sm.enabled}</div>
@@ -510,6 +548,7 @@ RENDER.overview = async (el) => {
     </div>
   </div>`;
   wireCommon(el);
+  wireNexusLinks(el);
   $("#ovBackup").onclick = openBackups;
   renderUpdatesPanel();
   $("#genBtn").onclick = async () => {
@@ -1183,7 +1222,7 @@ RENDER.nexus = async (el) => {
   S.boot.nexus.user = u || null;
   renderUserChip();
   if (!u) {
-    el.innerHTML = `<div class="grid cols-2"><div class="panel"><h2>Connect your Nexus Mods account</h2>
+    el.innerHTML = `<div class="nxh-slot">${nexusHealthBanner()}</div><div class="grid cols-2"><div class="panel"><h2>Connect your Nexus Mods account</h2>
       ${st.error ? `<div class="note warn">${esc(st.error)}</div>` : ""}
       ${S.boot.nexus.sso ? `<p><button class="btn primary" id="sso">Log in with Nexus Mods</button></p><p class="muted">Or use a personal API key instead:</p>` : ""}
       <p class="muted" style="max-width:62ch">Open your Nexus API keys page, copy your <b>Personal API Key</b> and paste it here. It's encrypted with your Windows account and only used to talk to Nexus.</p>
@@ -1194,6 +1233,7 @@ RENDER.nexus = async (el) => {
         <li><span class="dot"></span><span><b>Update checks.</b> See which mods and frameworks have newer versions.</span></li>
         <li><span class="dot"></span><span><b>Tracking.</b> Track everything you have installed so Nexus notifies you about updates.</span></li>
         <li><span class="dot"></span><span><b>One-click updates</b> for manual installs with Nexus Premium. Free accounts go to the Files tab.</span></li></ul></div></div>`;
+    wireNexusLinks(el);
     $("#keyPage").onclick = () => call("open_url", S.boot.nexus.api_key_page);
     $("#keyGo").onclick = async () => {
       const r = await call("nexus_login_key", $("#apikey").value);
@@ -1207,7 +1247,7 @@ RENDER.nexus = async (el) => {
   const ups = S.mods.filter((m) => m.update?.update);
   const unlinked = S.mods.filter((m) => m.source === "loose" && !m.nexus_id && !m.github && (S.boot.settings.queue_include_disabled || m.enabled)).length;
   const checked = S.mods.some((m) => m.update);
-  el.innerHTML = `<div class="grid cols-2">
+  el.innerHTML = `<div class="nxh-slot">${nexusHealthBanner()}</div><div class="grid cols-2">
     <div class="panel"><div class="user">${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : ""}<div><b>${esc(u.name)}</b>
       ${u.is_premium ? `<span class="pill">Premium</span>` : `<span class="muted">Free account</span>`}</div>
       <button class="btn small" id="logout" style="margin-left:auto">Disconnect</button></div>
@@ -1230,6 +1270,7 @@ RENDER.nexus = async (el) => {
     <div class="panel" style="margin-top:18px"><h2>Tracking</h2>
       <label class="check"><input type="checkbox" id="autoTrack" ${S.boot.settings.auto_track ? "checked" : ""}>Track mods on Nexus automatically when they're linked</label>
       <div id="tracked" class="muted" style="margin-top:10px">Loading…</div></div>`;
+  wireNexusLinks(el);
   $("#logout").onclick = async () => { await call("nexus_logout"); S.boot.nexus.user = null; renderUserChip(); RENDER.nexus(el); };
   $("#chk").onclick = runUpdateCheck;
   $("#ident").onclick = () => runIdentify(null);
@@ -1325,7 +1366,7 @@ RENDER.browse = async (el) => {
     return;
   }
   const b = S.browse;
-  el.innerHTML = `<div class="toolbar">
+  el.innerHTML = `<div class="nxh-slot">${nexusHealthBanner()}</div><div class="toolbar">
       <div class="seg" id="bwKind">${[["trending", "Trending", "Mods published in the last 7 days, most endorsed first"], ["latest_added", "New", "Newest mods first"],
         ["latest_updated", "Recently updated", "Most recently updated mods first"]]
         .map(([k, l, t]) => `<button data-k="${k}" title="${t}" class="${b.kind === k ? "on" : ""}">${l}</button>`).join("")}</div>

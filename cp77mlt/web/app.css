@@ -267,6 +267,18 @@ input:focus, select:focus { border-color: var(--yellow); outline: none; }
 .inline-form input { flex: 1; }
 .note { border-left: 3px solid var(--cyan); padding: 8px 12px; background: rgba(19,226,245,.06); margin: 12px 0; }
 .note.warn { border-color: var(--red); background: rgba(255,46,76,.07); }
+/* Nexus service health: banner on Nexus pages + status-bar indicator */
+.nxh-banner { margin: 0 0 18px; }
+.nxh-banner.down { border-color: var(--red); background: rgba(255,46,76,.07); }
+.nxh-banner.degraded { border-color: var(--orange); background: rgba(255,154,31,.07); }
+.nxh-banner.local { border-color: var(--cyan); }
+.nxh-banner a { color: var(--yellow); }
+.status .nxh { text-decoration: none; font-weight: 600; }
+.status .nxh::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; background: currentColor; }
+.status .nxh.down { color: var(--red); }
+.status .nxh.down::before { animation: blink 1.2s steps(2) infinite; }
+.status .nxh.degraded { color: var(--orange); }
+.status .nxh.local { color: var(--cyan); }
 
 /* ---------------------------------------------------------------- core */
 .core-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
