@@ -1,14 +1,14 @@
-"""Nexus Mods API (v1 REST) client.
+"""Nexus Mods API client (v1 REST for account, files, tracking and downloads; v2 GraphQL for search
+and Browse listings).
 
-Login options:
-* Personal API key from https://next.nexusmods.com/settings/api-keys (works today).
-* Nexus SSO ("Log in with Nexus" in the browser). This needs an application
-  slug that Nexus issues to registered apps; set NEXUS_APP_SLUG once you have
-  one and the SSO button appears in the UI.
+Sign-in:
+* OAuth 2.0 with PKCE ("Log in with Nexus Mods" in the browser), see oauth.py. Needs the client ID
+  Nexus issues to registered apps.
+* Personal API key: for testing builds only, before the OAuth client ID is set. The Nexus API
+  Acceptable Use Policy says personal keys aren't for public-facing apps.
 
-Free accounts can identify, track and check for updates. Downloading files
-through the API is a Nexus Premium feature; free users are sent to the
-Files tab instead (Vortex/MO2 handle the "Mod Manager Download" button).
+Free accounts can identify, track and check for updates. Downloading files through the API is a
+Nexus Premium feature; free users use "Mod Manager Download" on the site (nxm:// links).
 """
 from __future__ import annotations
 
@@ -18,11 +18,12 @@ import os
 import re
 import threading
 import time
-import uuid
 
 import requests
+import requests.auth
+from urllib.parse import urlparse
 
-from . import APP_NAME, APP_VERSION
+from . import APP_NAME, APP_VERSION, oauth
 from .nexus_health import NexusServiceError, diagnose, health, host_of
 
 API = "https://api.nexusmods.com/v1"
@@ -30,8 +31,8 @@ GRAPHQL = "https://api.nexusmods.com/v2/graphql"
 LEGACY_SEARCH = "https://search.nexusmods.com/mods"
 GAME_NUMERIC_ID = 3333  # Nexus game id for cyberpunk2077 (used by the website search and file previews)
 GAME = "cyberpunk2077"
-NEXUS_APP_SLUG: str | None = None  # e.g. "cp77mlt" once registered with Nexus
 API_KEY_PAGE = "https://next.nexusmods.com/settings/api-keys"
+API_HOSTS = {"api.nexusmods.com"}   # the only hosts that ever receive the user's credentials
 
 
 class NexusError(Exception):
@@ -47,15 +48,54 @@ APP_HEADERS = {
 }
 
 
-class NexusClient:
-    def __init__(self, api_key: str, cache_path: str | None = None):
+class KeyAuth(requests.auth.AuthBase):
+    """Personal API key (testing builds)."""
+    kind = "key"
+
+    def __init__(self, api_key: str):
         self.api_key = api_key
+
+    def __call__(self, r):
+        if urlparse(r.url).hostname in API_HOSTS:
+            r.headers["apikey"] = self.api_key
+        return r
+
+    def refresh(self) -> bool:
+        return False
+
+
+class OAuthAuth(requests.auth.AuthBase):
+    """OAuth access token as a Bearer header; refreshed shortly before it expires."""
+    kind = "oauth"
+
+    def __init__(self, store: "oauth.TokenStore"):
+        self.store = store
+
+    def __call__(self, r):
+        if urlparse(r.url).hostname in API_HOSTS:
+            try:
+                r.headers["Authorization"] = f"Bearer {self.store.access_token()}"
+            except oauth.OAuthError as e:
+                raise NexusError(str(e)) from e
+        return r
+
+    def refresh(self) -> bool:
+        try:
+            self.store.access_token(force_refresh=True)
+            return True
+        except oauth.OAuthError:
+            return False
+
+
+class NexusClient:
+    def __init__(self, auth: "KeyAuth | OAuthAuth | str", cache_path: str | None = None):
+        if isinstance(auth, str):
+            auth = KeyAuth(auth)
+        self.auth = auth
+        self.include_adult = False   # website search fallback; follows the user's setting
         self.session = requests.Session()
-        self.session.headers.update({
-            "apikey": api_key,
-            **APP_HEADERS,
-            "Accept": "application/json",
-        })
+        self.session.auth = auth
+        self.session.headers.update({**APP_HEADERS, "Accept": "application/json"})
         self.rate = {"daily": None, "hourly": None}
         self.cache_path = cache_path
         self._cache_lock = threading.Lock()
@@ -80,7 +120,7 @@ class NexusClient:
                 json.dump(self._cache, f)
             os.replace(tmp, self.cache_path)
 
-    def _req(self, method: str, path: str, **kw):
+    def _req(self, method: str, path: str, _retry: bool = True, **kw):
         try:
             r = self.session.request(method, API + path, timeout=20, **kw)
         except requests.RequestException as e:
@@ -99,7 +139,9 @@ class NexusClient:
                 except ValueError:
                     pass
         if r.status_code == 401:
-            raise NexusError("Nexus rejected the API key. Log in again.")
+            if _retry and self.auth.refresh():   # access token expired early: refresh once and retry
+                return self._req(method, path, _retry=False, **kw)
+            raise NexusError("Nexus rejected your sign-in. Log in again.")
         if r.status_code == 403:
             raise NexusError("Nexus refused this request (Premium may be required).")
         if r.status_code == 404:
@@ -129,6 +171,11 @@ class NexusClient:
 
     # -- endpoints ------------------------------------------------------------
     def validate(self) -> dict:
+        if self.auth.kind == "oauth":
+            try:
+                return oauth.userinfo({"access_token": self.auth.store.access_token()})
+            except oauth.OAuthError as e:
+                raise NexusError(str(e)) from e
         data = self._req("GET", "/users/validate.json")
         if not data:
             raise NexusError("API key could not be validated.")
@@ -235,76 +282,16 @@ class NexusClient:
             raise NexusError("Nexus name search is unavailable right now.")
         return self._cached(f"search:{term.lower()}", 7 * 86400, cached)
 
-    # -- catalog: every Cyberpunk mod's id + name, for local fuzzy matching --------------
-    _CATALOG_FILTERS = [
+    # GraphQL filter syntaxes for "this game" (the schema has changed shape over time)
+    _GAME_FILTERS = [
         "filter: { gameDomainName: [{ value: $g, op: EQUALS }] }",
         "filter: { gameDomain: { value: $g, op: EQUALS } }",
     ]
 
-    _CATALOG_SORTS = ["", "sort: [{ createdAt: { direction: ASC } }]", "sort: [{ createdAt: { direction: DESC } }]",
-                      "sort: [{ updatedAt: { direction: DESC } }]", "sort: [{ endorsements: { direction: DESC } }]"]
-
-    def _catalog_pass(self, filt: str, sort: str, page_size: int, progress, cancelled, base: int, total_hint):
-        out, offset, total = {}, 0, None
-        while True:
-            if cancelled():
-                raise InterruptedError
-            args = filt + (", " + sort if sort else "")
-            q = ("query Cat($g: String!, $o: Int!) { mods(" + args +
-                 f", count: {page_size}, offset: $o) {{ totalCount nodes {{ modId name version }} }} }}")
-            r = self.session.post(GRAPHQL, json={"query": q, "variables": {"g": GAME, "o": offset}}, timeout=30)
-            body = r.json()
-            mods = (body.get("data") or {}).get("mods")
-            if body.get("errors") or not mods:
-                if out:          # e.g. the server's paging window ends (often at 10,000 results)
-                    return out, total
-                raise NexusError(str(body.get("errors") or "no data")[:200])
-            nodes = mods.get("nodes") or []
-            total = mods.get("totalCount") or total
-            for n in nodes:
-                if n.get("modId"):
-                    out[n["modId"]] = {"mod_id": n["modId"], "name": n.get("name") or "", "version": n.get("version")}
-            offset += len(nodes)
-            if progress and (total or total_hint):
-                t = total or total_hint
-                progress(min((base + len(out)) / t, 1.0), f"Downloading the Nexus mod list ({base + len(out):,} of {t:,})")
-            if not nodes or (total and offset >= total):
-                return out, total
-
-    def catalog(self, progress=None, cancelled=lambda: False, page_size: int = 100) -> list[dict]:
-        """All mods for the game via GraphQL (paged). Doesn't use the v1 request quota.
-
-        Offset paging over a shifting order can repeat some mods and skip others, and the server
-        may stop paging at a fixed window. So results are de-duplicated by ID, and if fewer mods
-        came back than Nexus reports, extra passes in other sort orders fill the gaps."""
-        last_err = None
-        for filt in self._CATALOG_FILTERS:
-            merged: dict[int, dict] = {}
-            total = None
-            try:
-                for sort in self._CATALOG_SORTS:
-                    try:
-                        got, t = self._catalog_pass(filt, sort, page_size, progress, cancelled, 0, total)
-                    except NexusError:
-                        if not sort:
-                            raise       # the base query itself failed: try the next filter syntax
-                        continue        # this sort isn't supported: try the next one
-                    total = total or t
-                    merged.update(got)
-                    if total and len(merged) >= total:
-                        break
-                return list(merged.values())
-            except InterruptedError:
-                raise
-            except (requests.RequestException, ValueError, NexusError) as e:
-                last_err = e
-                continue
-        raise NexusError(f"Couldn't download the Nexus mod list: {last_err}")
-
     def sorted_ids(self, field: str, offset: int, count: int) -> list[int]:
         """Mod IDs newest-first by createdAt/updatedAt, for paged New / Recently updated lists."""
         def fetch():
-            for filt in self._CATALOG_FILTERS:
+            for filt in self._GAME_FILTERS:
                 q = ("query L($g: String!, $o: Int!) { mods(" + filt + f", sort: [{{ {field}: {{ direction: DESC }} }}]"
                      + f", count: {count}, offset: $o) {{ nodes {{ modId }} }} }}")
                 try:
@@ -329,7 +316,7 @@ class NexusClient:
         def fetch():
             since = time.time() - days * 86400
             for fields in (self._CARD_FIELDS, "modId name createdAt endorsements"):
-                for filt in self._CATALOG_FILTERS:
+                for filt in self._GAME_FILTERS:
                     out, ok = {}, True
                     for page in range(pages):
                         q = ("query T($g: String!, $o: Int!) { mods(" + filt +
@@ -367,7 +354,7 @@ class NexusClient:
         """The website's search endpoint; fallback when GraphQL search is unavailable."""
         def fetch():
             try:
-                r = requests.get(LEGACY_SEARCH, params={"terms": term, "game_id": GAME_NUMERIC_ID, "include_adult": 1,
+                r = requests.get(LEGACY_SEARCH, params={"terms": term, "game_id": GAME_NUMERIC_ID, "include_adult": int(bool(self.include_adult)),
                                                         "blocked_tags": "", "blocked_authors": ""},
                                  headers=APP_HEADERS, timeout=20)
                 data = r.json()
@@ -375,7 +362,7 @@ class NexusClient:
                 return []
             return [{"mod_id": int(x["mod_id"]), "name": x.get("name", ""), "version": None}
                     for x in data.get("results", []) if x.get("mod_id")]
-        return self._cached(f"lsearch:{term.lower()}", 7 * 86400, fetch)
+        return self._cached(f"lsearch:{int(bool(self.include_adult))}:{term.lower()}", 7 * 86400, fetch)
 
     def any_search(self, term: str) -> list[dict]:
         res = []
@@ -612,32 +599,6 @@ def md5_file(path: str, cache: dict | None = None) -> str:
     if cache is not None:
         cache[key] = digest
     return digest
-
-
-def sso_login(open_browser, timeout: float = 300.0) -> str:
-    """Nexus SSO over websocket. Requires NEXUS_APP_SLUG. Returns the API key."""
-    if not NEXUS_APP_SLUG:
-        raise NexusError("SSO is not configured for this build.")
-    try:
-        import websocket  # websocket-client
-    except ImportError as e:
-        raise NexusError("websocket-client is not installed.") from e
-    ws = websocket.create_connection("wss://sso.nexusmods.com", timeout=timeout)
-    try:
-        req_id = str(uuid.uuid4())
-        ws.send(json.dumps({"id": req_id, "token": None, "protocol": 2}))
-        open_browser(f"https://www.nexusmods.com/sso?id={req_id}&application={NEXUS_APP_SLUG}")
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            msg = json.loads(ws.recv())
-            if not msg.get("success"):
-                raise NexusError(msg.get("error") or "SSO failed.")
-            key = (msg.get("data") or {}).get("api_key")
-            if key:
-                return key
-        raise NexusError("Timed out waiting for Nexus login.")
-    finally:
-        ws.close()
 
 
 def download_any(links: list[dict], dest: str, progress=None, cancelled=lambda: False) -> str:

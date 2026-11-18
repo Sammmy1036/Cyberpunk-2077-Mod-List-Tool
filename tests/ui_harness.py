@@ -145,9 +145,6 @@ class FakeNexus:
         return [{"mod_id": c["mod_id"], "endorsements": c["endorsement_count"], "created": 0, "card": c}
                 for c in sorted(self.feed("trending"), key=lambda c: -c["endorsement_count"])]
 
-    def catalog(self, progress=None, cancelled=None):
-        return self.CAT
-
     def any_search(self, term):
         return self.search(term)
 

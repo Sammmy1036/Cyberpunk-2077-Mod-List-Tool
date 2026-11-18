@@ -29,7 +29,10 @@ DEFAULTS: dict = {
     "mo2_profile": "",
     "mo2_executable": "",           # MO2 executable title used to launch the game
     "launch_via": "auto",           # auto | exe | store | mo2
-    "nexus_api_key": "",            # DPAPI-protected (see secure.py)
+    "nexus_api_key": "",            # DPAPI-protected (see secure.py); testing builds only
+    "nexus_oauth": "",              # DPAPI-protected OAuth tokens (access, refresh, expiry)
+    "nexus_user": None,             # last known account name/avatar/membership, shown without a request at launch
+    "nexus_include_adult": False,   # include adult mods in Nexus website search results
     "nexus_links": {},              # mod key -> {mod_id, file_id, version, name}
     "nexus_check_on_start": False,
     "install_records": {},          # mod key -> {mod_id, file_id, version, files[]}
@@ -165,10 +168,10 @@ class Config:
             self.save()
 
     def public(self) -> dict:
-        """Settings safe to hand to the UI (never the API key)."""
+        """Settings safe to hand to the UI (never the API key or OAuth tokens)."""
         with self._lock:
             out = {k: copy.deepcopy(v) for k, v in self.data.items()
-                   if k not in ("nexus_api_key", "install_records", "nexus_links", "nexus_suggestions",
+                   if k not in ("nexus_api_key", "nexus_oauth", "install_records", "nexus_links", "nexus_suggestions",
                                 "nexus_rejected", "nxm_previous_handler", "github_links", "install_groups", "manual_groups")}
             out["output_dir_effective"] = self.data.get("output_dir") or documents_dir()
             return out

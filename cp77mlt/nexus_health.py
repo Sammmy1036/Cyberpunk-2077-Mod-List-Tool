@@ -1,7 +1,8 @@
 """Works out whether a Nexus failure is on Nexus's side or the user's, so the UI can say so.
 
 Two sources feed it:
-  * Nexus's public status page (Atlassian Statuspage), polled in the background.
+  * Nexus's public status page (Atlassian Statuspage), read on demand: when the user opens the
+    Nexus page, and when a request to Nexus fails. Nothing polls it in the background.
   * What the app itself sees. The status page is updated by hand and covers the CDN as a whole,
     so a single dead download node (e.g. la-premium.nexus-cdn.com refusing connections) often
     never shows up there. When a Nexus host fails, we probe a neutral site: if the internet
@@ -23,7 +24,7 @@ STATUS_API = STATUS_PAGE + "/api/v2/summary.json"
 # Neutral hosts used only to answer "is the internet up?". Windows' own connectivity check first.
 PROBES = ("http://www.msftconnecttest.com/connecttest.txt", "https://www.google.com/generate_204",
           "https://1.1.1.1/")
-STATUS_TTL = 300        # seconds between status-page polls
+STATUS_TTL = 300        # minimum seconds between status-page reads
 INCIDENT_TTL = 15 * 60  # how long an app-observed failure stays on screen without a newer one
 
 _SEVERITY = {"operational": 0, "under_maintenance": 1, "degraded_performance": 2,
@@ -161,21 +162,21 @@ class Health:
             if s is not None:
                 self._status = s
 
-    def start_polling(self) -> None:
+    def refresh_async(self) -> None:
+        """Read the status page in the background if the last read is older than STATUS_TTL.
+        Called on user actions (opening the Nexus page) and after a failed Nexus request."""
+        if time.time() - self._status_t < STATUS_TTL:
+            return
         if self._poller and self._poller.is_alive():
             return
-
-        def loop():
-            while True:
-                self.refresh(force=True)
-                time.sleep(STATUS_TTL)
-        self._poller = threading.Thread(target=loop, daemon=True, name="nexus-status")
+        self._poller = threading.Thread(target=self.refresh, daemon=True, name="nexus-status")
         self._poller.start()
 
     # -- app-observed failures -----------------------------------------------------------
     def record_failure(self, diagnosis: dict) -> None:
         with self._lock:
             self._incident = diagnosis
+        self.refresh_async()   # see whether Nexus has posted an incident for it
 
     def record_success(self, host: str = "") -> None:
         """A request to `host` worked; clear an observed failure for that host (any host if blank)."""

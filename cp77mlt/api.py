@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 
-from . import APP_NAME, APP_VERSION, NEXUS_PAGE, backups, culprits, core_mods, game, github, identify, logs, managers, nexus, nxm, ops, report, secure
+from . import APP_NAME, APP_VERSION, NEXUS_PAGE, backups, culprits, core_mods, game, github, identify, logs, managers, nexus, nxm, oauth, ops, report, secure
 from .config import Config, app_data_dir, documents_dir
 from .scanner import TEMP_DISABLED_DIR, Mod, build_mod_list, dir_signature
 from .scanner import component_path_key as scanner_key
@@ -52,7 +52,9 @@ class Api:
         self._game_seen = False
         self._nxm_pending: list[str] = []
         self._nxm_errors: list[str] = []
-        self._catalog_obj = None
+        self._names_obj = None        # names of Nexus mods this app has looked up (not a full list)
+        self._nexus_validated = False
+        self._names_lock = threading.RLock()
         self._gh = github.GitHubClient(os.path.join(app_data_dir(), "github_cache.json"))
         self._tracked: set[int] | None = None
         self._init_mo2()
@@ -150,15 +152,14 @@ class Api:
             if len(found) == 1:
                 self._cfg.set("game_dir", found[0]["path"])
                 gd = found[0]["path"]
-        self._restore_nexus()
-        nexus.health.start_polling()
+        self._restore_nexus()   # local only: no network requests at launch
         return {
             "app": {"name": APP_NAME, "version": APP_VERSION, "nexus_page": NEXUS_PAGE},
             "settings": self._cfg.public(),
             "game": self.game_info(),
             "managers": self.manager_info(),
-            "nexus": {"user": self._nexus_user, "sso": bool(nexus.NEXUS_APP_SLUG),
-                      "api_key_page": nexus.API_KEY_PAGE},
+            "nexus": {"user": self._nexus_user, "oauth": oauth.configured(),
+                      "key_login": not oauth.configured(), "api_key_page": nexus.API_KEY_PAGE},
         }
 
     def game_info(self) -> dict:
@@ -205,11 +206,13 @@ class Api:
     def save_settings(self, values: dict) -> dict:
         allowed = {"auto_open_output", "auto_select_all_logs", "include_errors_in_output",
                    "include_disabled_in_output", "manager_mode", "launch_via", "mo2_profile",
-                   "mo2_executable", "nexus_check_on_start", "output_dir", "auto_track", "include_grouped_in_output", "ask_report_path", "queue_include_disabled",
+                   "mo2_executable", "nexus_check_on_start", "output_dir", "auto_track", "include_grouped_in_output", "ask_report_path", "queue_include_disabled", "nexus_include_adult",
                    "backup_schedule", "backup_keep", "group_mod_files", "mods_view", "replaced_keep"}
         self._cfg.update({k: v for k, v in values.items() if k in allowed})
         if "replaced_keep" in values:
             self._prune_replaced()
+        if "nexus_include_adult" in values and self._nexus:
+            self._nexus.include_adult = bool(values["nexus_include_adult"])
         if "group_mod_files" in values:
             self._sig = None
         if {"manager_mode", "mo2_profile"} & set(values):
@@ -576,50 +579,87 @@ class Api:
                 "connected": bool(self._nexus), "premium": bool((self._nexus_user or {}).get("is_premium"))}
 
     def _restore_nexus(self) -> None:
+        """Rebuild the client from saved credentials. Makes no requests: the account is checked
+        the first time the user opens the Nexus page or runs a Nexus action."""
         if self._nexus:
             return
-        key = secure.unprotect(self._cfg.get("nexus_api_key"))
-        if key:
-            self._nexus = nexus.NexusClient(key, os.path.join(app_data_dir(), "nexus_cache.json"))
+        stored = secure.unprotect(self._cfg.get("nexus_oauth"))
+        auth = None
+        if stored:
             try:
-                self._nexus_user = self._nexus.validate()
-                threading.Thread(target=self._refresh_tracked, daemon=True).start()
-            except nexus.NexusError:
-                self._nexus_user = None  # offline or revoked; keep key, UI shows reconnect
+                auth = self._oauth_auth(json.loads(stored))
+            except ValueError:
+                auth = None
+        if auth is None and not oauth.configured():
+            key = secure.unprotect(self._cfg.get("nexus_api_key"))
+            auth = nexus.KeyAuth(key) if key else None
+        if auth:
+            self._nexus = self._make_client(auth)
+            self._nexus_user = self._cfg.get("nexus_user") or None
+
+    def _oauth_auth(self, token: dict) -> nexus.OAuthAuth:
+        def save(tok: dict) -> None:   # refreshed tokens replace the stored ones
+            self._cfg.set("nexus_oauth", secure.protect(json.dumps(tok)))
+        return nexus.OAuthAuth(oauth.TokenStore(token, on_change=save))
+
+    def _make_client(self, auth) -> nexus.NexusClient:
+        client = nexus.NexusClient(auth, os.path.join(app_data_dir(), "nexus_cache.json"))
+        client.include_adult = bool(self._cfg.get("nexus_include_adult"))
+        return client
+
+    def _signed_in(self, client: nexus.NexusClient, user: dict) -> dict:
+        self._nexus, self._nexus_user, self._nexus_validated = client, user, True
+        self._cfg.set("nexus_user", user)
+        return {"ok": True, "user": user}
 
     def nexus_login_key(self, api_key: str) -> dict:
+        """Personal API key sign-in. Testing builds only (before the OAuth client ID is set)."""
+        if oauth.configured():
+            return _err("Use \"Log in with Nexus Mods\" to connect your account.")
         api_key = (api_key or "").strip()
         if not api_key:
             return _err("Paste your personal API key.")
-        client = nexus.NexusClient(api_key, os.path.join(app_data_dir(), "nexus_cache.json"))
+        client = self._make_client(nexus.KeyAuth(api_key))
         try:
             user = client.validate()
         except nexus.NexusError as e:
             return _err(str(e))
-        self._nexus, self._nexus_user = client, user
         self._cfg.set("nexus_api_key", secure.protect(api_key))
-        threading.Thread(target=self._refresh_tracked, daemon=True).start()
-        return {"ok": True, "user": user}
+        return self._signed_in(client, user)
 
-    def nexus_sso(self) -> dict:
-        def work(prog, _c):
-            prog(0.1, "Waiting for you to authorise in the browser")
-            key = nexus.sso_login(game.open_uri)
-            r = self.nexus_login_key(key)
-            if not r.get("ok"):
-                raise RuntimeError(r.get("error"))
-            return r
-        return self._task("nexus-sso", work)
+    def nexus_oauth_login(self) -> dict:
+        """Browser sign-in with OAuth 2.0 + PKCE (runs as a task until the user approves)."""
+        def work(prog, cancelled):
+            prog(0.1, "Approve the sign-in in your browser")
+            try:
+                token = oauth.login(game.open_uri, cancelled)
+            except oauth.OAuthError as e:
+                raise RuntimeError(str(e)) from e
+            prog(0.8, "Reading your Nexus Mods account")
+            client = self._make_client(self._oauth_auth(token))
+            try:
+                user = client.validate()
+            except nexus.NexusError as e:
+                raise RuntimeError(str(e)) from e
+            self._cfg.set("nexus_oauth", secure.protect(json.dumps(token)))
+            self._cfg.set("nexus_api_key", "")
+            return self._signed_in(client, user)
+        return self._task("nexus-oauth", work)
 
     def nexus_logout(self) -> dict:
         self._nexus, self._nexus_user, self._tracked = None, None, None
-        self._cfg.set("nexus_api_key", "")
+        self._nexus_validated = False
+        self._cfg.update({"nexus_api_key": "", "nexus_oauth": "", "nexus_user": None})
         return {"ok": True}
 
     def nexus_status(self) -> dict:
-        if self._nexus and not self._nexus_user:
+        """Called when the user opens the Nexus page: checks the account once per session."""
+        nexus.health.refresh_async()
+        if self._nexus and not self._nexus_validated:
             try:
-                self._nexus_user = self._nexus.validate()
+                user = self._nexus.validate()
+                self._nexus_user, self._nexus_validated = user, True
+                self._cfg.set("nexus_user", user)
             except nexus.NexusError as e:
                 return {"ok": False, "user": None, "error": str(e), "has_key": True}
         return {"ok": True, "user": self._nexus_user, "has_key": bool(self._nexus),
@@ -695,8 +735,7 @@ class Api:
             return _err(str(e))
         self._tracked = {t["mod_id"] for t in tracked}
         names = {}
-        if self._catalog_obj:
-            names = {m["mod_id"]: m["name"] for m in self._catalog_obj.mods}
+        names = {m["mod_id"]: m["name"] for m in self._names().mods}
         installed = {}
         for m in self._mods:
             if m.nexus_id:
@@ -1061,18 +1100,21 @@ class Api:
                 for mid in f:
                     ref_count[mid] = ref_count.get(mid, 0) + 1
             common = {mid for mid, n in ref_count.items() if n >= 3}
-            cat0 = None
+            # page names for the IDs found in files, so a link to another mod (a credit, a sibling
+            # mod) isn't mistaken for this one. Looked up per ID and cached; no bulk listing.
             if client:
-                try:
-                    cat0 = self._catalog(lambda f, msg: prog(0.1 + 0.05 * f, msg), cancelled)
-                except nexus.NexusError:
-                    cat0 = None
+                want = {mid for f in found_all.values() for mid in f
+                        if mid not in core_ids and mid not in common}
+                self._lookup_names(client, want, lambda f, msg: prog(0.1 + 0.05 * f, msg), cancelled)
+            book = self._names()
             by_url = 0
             for m in targets:
                 found = found_all.get(m.key) or {}
                 if not found:
                     continue
                 found = {k: v for k, v in found.items() if f"{m.key}|{k}" not in rejected}
+                known = [x for x in book.mods if x["mod_id"] in found]
+                cat0 = identify.Catalog(known) if known else None
                 own, cands = identify.pick_own_id(found, core_ids | common, identify.local_names(m), cat0)
                 if own is None and not cands:  # only framework/common links: try again allowing common ids
                     own, cands = identify.pick_own_id(found, core_ids, identify.local_names(m), cat0)
@@ -1141,14 +1183,11 @@ class Api:
                                       "version": fd.get("version") or fd.get("mod_version"),
                                       "name": mod.get("name"), "method": "download"}
                         by_download += 1
-            # -- step 2: catalog name match, then verify against Nexus's file lists
+            # -- step 2: search Nexus by name (only for mods still unmatched), then verify
+            #    candidates against Nexus's file lists
             by_name, suggested, search_error, verified = 0, 0, None, 0
             rest = [m for m in targets if m.key not in links and m.key not in suggestions]
             if client and rest:
-                try:
-                    cat = self._catalog(lambda f, msg: prog(0.6 + 0.1 * f, msg), cancelled)
-                except nexus.NexusError as e:
-                    cat, search_error = None, str(e)
                 disabled_root = os.path.join(gd, TEMP_DISABLED_DIR)
                 done = [0]
                 lock = threading.Lock()
@@ -1157,28 +1196,17 @@ class Api:
                     if cancelled():
                         return None
                     names = identify.local_names(m)
-                    if cat:
-                        cands = cat.candidates(names)
-                        if not cands or cands[0][1] < 0.9:   # cached list may be incomplete: ask Nexus too
-                            live = []
-                            for term in identify.search_terms(m.name)[:1]:
-                                try:
-                                    live += client.any_search(term)
-                                except nexus.NexusError:
-                                    pass
-                            if live:
-                                extra = [(n, max(identify.similarity(x, n["name"]) for x in names)) for n in live]
-                                byid = {c["mod_id"]: (c, sc) for c, sc in cands + extra}
-                                cands = sorted(byid.values(), key=lambda t: -t[1])[:4]
-                    else:  # catalog unavailable: per-name search
-                        nodes = []
-                        for term in identify.search_terms(m.name)[:1]:
-                            try:
-                                nodes += client.any_search(term)
-                            except nexus.NexusError:
-                                pass
-                        cands = sorted(((n, max(identify.similarity(x, n["name"]) for x in names)) for n in nodes),
-                                       key=lambda t: -t[1])[:4]
+                    terms = list(dict.fromkeys(t for n in names for t in identify.search_terms(n)))[:2]
+                    nodes = []
+                    for term in terms:
+                        try:
+                            nodes += client.any_search(term)
+                        except nexus.NexusError:
+                            pass
+                    self._learn_names(nodes)
+                    byid = {n["mod_id"]: n for n in nodes}
+                    cands = sorted(((n, max(identify.similarity(x, n["name"]) for x in names)) for n in byid.values()),
+                                   key=lambda t: -t[1])[:4]
                     cands = [(c, sc) for c, sc in cands if f"{m.key}|{c['mod_id']}" not in rejected]
                     installed = identify.installed_files(m, gd, disabled_root)
                     best = None
@@ -1247,32 +1275,67 @@ class Api:
                     "unlinked": sum(1 for m in targets if m.key not in links and m.key not in suggestions)}
         return self._task("identify", work)
 
-    def _catalog(self, progress=None, cancelled=lambda: False):
-        """Nexus's full Cyberpunk mod list, cached on disk for a week."""
-        if self._catalog_obj is not None:
-            return self._catalog_obj
-        path = os.path.join(app_data_dir(), "nexus_catalog.json")
-        data = None
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if time.time() - data.get("fetched", 0) > 7 * 86400 or data.get("v") != 2:
-                data = None   # v1 lists could have duplicates/gaps: rebuild once
-        except (OSError, ValueError):
-            data = None
-        if data is None:
-            mods = self._client().catalog(progress, cancelled)
-            data = {"fetched": time.time(), "mods": mods, "v": 2}
+    # Names of Nexus mods this app has already looked up (search results, linked mods). Used to
+    # rank searches and sanity-check links locally. It only ever holds mods the user's own
+    # actions touched; the app never downloads Nexus's full mod list.
+    def _names(self) -> identify.Catalog:
+        with self._names_lock:
+            return self._load_names()
+
+    def _load_names(self) -> identify.Catalog:
+        if self._names_obj is None:
+            mods = []
             try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(data, f)
+                with open(os.path.join(app_data_dir(), "nexus_names.json"), "r", encoding="utf-8") as f:
+                    mods = json.load(f).get("mods") or []
+            except (OSError, ValueError):
+                pass
+            self._names_obj = identify.Catalog([m for m in mods if m.get("mod_id") and m.get("name")])
+            try:   # the old full-list cache from pre-release 3.0 builds is no longer used
+                os.remove(os.path.join(app_data_dir(), "nexus_catalog.json"))
             except OSError:
                 pass
-        self._catalog_obj = identify.Catalog(data["mods"])
-        return self._catalog_obj
+        return self._names_obj
+
+    def _learn_names(self, rows: list[dict]) -> None:
+        rows = [{"mod_id": int(r["mod_id"]), "name": r["name"]} for r in rows or [] if r.get("mod_id") and r.get("name")]
+        if not rows:
+            return
+        with self._names_lock:
+            book = self._names()
+            before = len(book.mods)
+            book.add(rows)
+            if len(book.mods) == before:
+                return
+            try:
+                path = os.path.join(app_data_dir(), "nexus_names.json")
+                with open(path + ".tmp", "w", encoding="utf-8") as f:
+                    json.dump({"mods": [{"mod_id": m["mod_id"], "name": m["name"]} for m in book.mods]}, f)
+                os.replace(path + ".tmp", path)
+            except OSError:
+                pass
+
+    NAME_LOOKUP_LIMIT = 150   # per Find on Nexus run; IDs past this are left for the review queue
+
+    def _lookup_names(self, client, ids: set, progress=None, cancelled=lambda: False) -> None:
+        known = {m["mod_id"] for m in self._names().mods}
+        todo = sorted(i for i in ids if i not in known)[:self.NAME_LOOKUP_LIMIT]
+        rows = []
+        for i, mid in enumerate(todo, 1):
+            if cancelled():
+                raise InterruptedError
+            if progress:
+                progress(i / len(todo), f"Looking up linked Nexus pages {i}/{len(todo)}")
+            try:
+                d = client.mod(mid, ttl=30 * 86400)
+            except nexus.NexusError:
+                break   # rate limited or offline: carry on with what we have
+            if d and d.get("name"):
+                rows.append({"mod_id": mid, "name": d["name"]})
+        self._learn_names(rows)
 
     def nexus_search(self, term: str) -> dict:
-        """Search Nexus for the manual link box: local catalog if available, otherwise the API."""
+        """Search Nexus for the manual link box: live search, plus names this app has looked up before."""
         term = (term or "").strip()
         mid = nexus.parse_mod_id(term)
         try:
@@ -1287,28 +1350,14 @@ class Api:
             return {"ok": True, "results": [{"mod_id": mid, "name": d.get("name"), "version": d.get("version")}] if d else []}
         if len(term) < 2:
             return {"ok": True, "results": []}
-        local, live = [], []
+        local, live = self._names().search(term, top=25), []
         try:
-            cat = self._catalog_obj or (self._catalog() if os.path.exists(os.path.join(app_data_dir(), "nexus_catalog.json")) else None)
-            if cat:
-                local = cat.search(term, top=25)
-        except nexus.NexusError:
-            cat = None
-        try:
-            live = client.any_search(term)      # catches mods newer than (or missing from) the cached list
-            if cat:
-                cat.add(live)
+            live = client.any_search(term)
+            self._learn_names(live)
         except nexus.NexusError as e:
             if not local:
                 return _err(str(e))
         return {"ok": True, "results": identify.merge_ranked(term, local, live, top=20)}
-
-    def _refresh_tracked(self) -> None:
-        if self._nexus:
-            try:
-                self._tracked = {t["mod_id"] for t in self._nexus.tracked()}
-            except nexus.NexusError:
-                pass
 
     def app_logo(self) -> dict:
         from . import icons
@@ -1718,14 +1767,13 @@ class Api:
                 if mid and ("nexusmods.com" in term or term.isdigit()):
                     ids = [mid]
                 else:
-                    cat = self._catalog()
                     live = []
                     try:
                         live = client.any_search(term) if term else []
-                        cat.add(live)
+                        self._learn_names(live)
                     except nexus.NexusError:
                         pass
-                    ranked = identify.merge_ranked(term, cat.search(term, top=60), live, top=60) if term else []
+                    ranked = identify.merge_ranked(term, live, self._names().search(term, top=60), top=60) if term else []
                     ids = [x["mod_id"] for x in ranked][offset:offset + count]
                 mods = self._fetch_mods(client, ids)
             else:
