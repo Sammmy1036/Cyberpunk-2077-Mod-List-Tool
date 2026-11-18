@@ -62,7 +62,7 @@ function result(r, okMsg) {
   return r.ok !== false;
 }
 const TASK_LABEL = { export: "Exporting preset", install: "Installing archive", backup: "Backing up mods", restore: "Restoring backup", identify: "Identifying mods on Nexus",
-  updates: "Checking for updates", update: "Updating mod", "track-all": "Tracking mods on Nexus", "nexus-sso": "Logging in to Nexus" };
+  updates: "Checking for updates", update: "Updating mod", "track-all": "Tracking mods on Nexus", "nexus-oauth": "Waiting for you to approve the sign-in in your browser" };
 const taskDone = {};
 const activeTasks = new Set(), finishedTasks = new Set();
 let taskPoller = null;
@@ -619,8 +619,8 @@ async function renderUpdatesPanel() {
     const key = b.dataset.upd;
     await doUpdate(key, () => renderUpdatesPanel());
   }));
-  // first visit this session: check automatically if results are old
-  if (!checking && !autoChecked && (!u.checked || Date.now() / 1000 - u.checked > 6 * 3600)) { autoChecked = true; runUpdateCheck(); }
+  // first visit this session: check automatically if results are old, only if the user turned that on
+  if (S.boot.settings.nexus_check_on_start && !checking && !autoChecked && (!u.checked || Date.now() / 1000 - u.checked > 6 * 3600)) { autoChecked = true; runUpdateCheck(); }
 }
 async function runUpdateCheck() {
   autoChecked = true;
@@ -1224,23 +1224,26 @@ RENDER.nexus = async (el) => {
   if (!u) {
     el.innerHTML = `<div class="nxh-slot">${nexusHealthBanner()}</div><div class="grid cols-2"><div class="panel"><h2>Connect your Nexus Mods account</h2>
       ${st.error ? `<div class="note warn">${esc(st.error)}</div>` : ""}
-      ${S.boot.nexus.sso ? `<p><button class="btn primary" id="sso">Log in with Nexus Mods</button></p><p class="muted">Or use a personal API key instead:</p>` : ""}
-      <p class="muted" style="max-width:62ch">Open your Nexus API keys page, copy your <b>Personal API Key</b> and paste it here. It's encrypted with your Windows account and only used to talk to Nexus.</p>
+      ${S.boot.nexus.oauth ? `<p class="muted" style="max-width:62ch">Sign in on nexusmods.com in your browser and approve access for this app. Your sign-in is encrypted with your Windows account and only used to talk to Nexus.</p>
+      <p><button class="btn primary" id="oauthGo">Log in with Nexus Mods</button></p></div>`
+      : `<p class="muted" style="max-width:62ch"><b>Testing build.</b> Paste your <b>Personal API Key</b> from your Nexus API keys page. It's encrypted with your Windows account and only used to talk to Nexus. Release builds use "Log in with Nexus Mods" instead.</p>
       <div class="inline-form"><input type="password" id="apikey" placeholder="Personal API key" aria-label="Nexus API key" autocomplete="off"><button class="btn primary" id="keyGo">Connect</button></div>
-      <p><button class="link" id="keyPage">Open my Nexus API keys page</button></p></div>
+      <p><button class="link" id="keyPage">Open my Nexus API keys page</button></p></div>`}
       <div class="panel hatch"><h2>What connecting gives you</h2><ul class="alerts">
         <li><span class="dot"></span><span><b>Identify manual installs.</b> Mods you dropped into the game folder are matched to their Nexus pages by file hash.</span></li>
         <li><span class="dot"></span><span><b>Update checks.</b> See which mods and frameworks have newer versions.</span></li>
         <li><span class="dot"></span><span><b>Tracking.</b> Track everything you have installed so Nexus notifies you about updates.</span></li>
         <li><span class="dot"></span><span><b>One-click updates</b> for manual installs with Nexus Premium. Free accounts go to the Files tab.</span></li></ul></div></div>`;
     wireNexusLinks(el);
-    $("#keyPage").onclick = () => call("open_url", S.boot.nexus.api_key_page);
-    $("#keyGo").onclick = async () => {
-      const r = await call("nexus_login_key", $("#apikey").value);
-      if (result(r, `Connected as ${r.user?.name}.`)) { S.boot.nexus.user = r.user; renderUserChip(); RENDER.nexus(el); }
-    };
-    $("#apikey").onkeydown = (e) => { if (e.key === "Enter") $("#keyGo").click(); };
-    if ($("#sso")) $("#sso").onclick = async () => startTask(await call("nexus_sso"), (res) => { S.boot.nexus.user = res.user; RENDER.nexus(el); });
+    if ($("#oauthGo")) $("#oauthGo").onclick = async () => startTask(await call("nexus_oauth_login"), (res) => { S.boot.nexus.user = res.user; renderUserChip(); RENDER.nexus(el); });
+    if ($("#keyGo")) {
+      $("#keyPage").onclick = () => call("open_url", S.boot.nexus.api_key_page);
+      $("#keyGo").onclick = async () => {
+        const r = await call("nexus_login_key", $("#apikey").value);
+        if (result(r, `Connected as ${r.user?.name}.`)) { S.boot.nexus.user = r.user; renderUserChip(); RENDER.nexus(el); }
+      };
+      $("#apikey").onkeydown = (e) => { if (e.key === "Enter") $("#keyGo").click(); };
+    }
     return;
   }
   await refreshMods();
@@ -1514,6 +1517,11 @@ RENDER.settings = async (el) => {
     <div class="panel" style="margin-top:18px"><h2>Linking mods to Nexus</h2>
       <div class="field"><label>Link queue</label><div>
         <label class="check"><input type="checkbox" data-opt="queue_include_disabled" ${s.queue_include_disabled ? "checked" : ""}>Show disabled mods in the link queue</label></div></div>
+      <div class="field"><label>Update checks</label><div class="stack">
+        <label class="check"><input type="checkbox" data-opt="nexus_check_on_start" ${s.nexus_check_on_start ? "checked" : ""}>Check Nexus for updates when the tool starts</label>
+        <span class="muted">Only when the last check is more than 6 hours old. Otherwise use Check now.</span></div></div>
+      <div class="field"><label>Search</label><div>
+        <label class="check"><input type="checkbox" data-opt="nexus_include_adult" ${s.nexus_include_adult ? "checked" : ""}>Include adult mods in Nexus search results</label></div></div>
       <div class="field"><label>Mod file grouping</label><div class="stack">
         <label class="check"><input type="checkbox" data-opt="group_mod_files" ${s.group_mod_files !== false ? "checked" : ""}>Group files that belong to the same Nexus mod into one entry</label>
         <span class="muted">For example, Appearance Menu Mod's CET folder and its archive files are listed and counted as one mod. Files you installed together from one archive with Install mod are always grouped.</span></div></div>
