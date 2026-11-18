@@ -5,11 +5,11 @@ A companion app for Cyberpunk 2077 modding. It catalogs your mods, checks the co
 ## What's new in 3.0
 
 - **New interface** built with pywebview (HTML/CSS). It's resizable and keyboard friendly, with a Cyberpunk-inspired look.
-- **Accurate mod counts.** Files are grouped into mods. `Foo.archive`, `Foo.archive.xl` and `r6/scripts/Foo` count as one mod, not three. REDmod (`mods/`), Input Loader (`r6/input`) and ASI plugins are now detected too.
+- **Accurate mod counts.** Files are grouped into mods. `mymod.archive`, `mymod.xl` and `r6/scripts/mymod` count as one mod, not three. REDmod (`mods/`), Input Loader (`r6/input`) and ASI plugins are now detected too.
 - **Vortex and MO2 support.**
   - *Vortex:* mods deployed by Vortex are recognised from `vortex.deployment.json` and shown with their Vortex name, version and Nexus ID. The tool never moves Vortex's files, so Vortex won't report them as externally changed.
   - *MO2:* mods are read from your instance and profile (`modlist.txt`, `meta.ini`). You can toggle them here while MO2 is closed, and the game can be launched through MO2 so its virtual filesystem is active.
-- **Nexus Mods integration.** Connect with your personal API key (stored encrypted with Windows DPAPI).
+- **Nexus Mods integration.** "Log in with Nexus Mods" signs in through your browser (OAuth 2.0 with PKCE). Your sign-in is stored only on your PC, encrypted with Windows DPAPI, and only sent to Nexus Mods.
   - Identify manually installed mods by file hash.
   - Check mods and core frameworks for updates.
   - Track everything you have installed.
@@ -17,7 +17,7 @@ A companion app for Cyberpunk 2077 modding. It catalogs your mods, checks the co
 - **Finding your mods on Nexus.** Nexus only indexes uploaded archives, not the files unpacked into your game, so manual installs are matched in layers:
   0. *Nexus links inside the mod's files.* Many authors put their mod page URL in `.xl`, `.reds`, `init.lua`, `.yaml` or readme files. Links to frameworks and other shared requirements are ignored.
   1. *Downloaded archives* (Downloads, the Vortex and MO2 download folders, plus folders you add). The file name gives the mod ID and version, and the contents are checked against what's installed. Exact.
-  2. *Catalog plus file check.* The tool downloads Nexus's full Cyberpunk mod list once a week and fuzzy-matches every name a mod goes by: folders, archives, REDmod names. The best candidates' file lists (Nexus "content preview") are then compared with your installed files. A match confirms the mod, and matching file sizes give the exact version.
+  2. *Name search plus file check.* For mods still unmatched, the tool searches Nexus for the mod's name. The best candidates' file lists (Nexus "content preview") are then compared with your installed files. A match confirms the mod, and matching file sizes give the exact version.
   3. *Review and link queue.* Close-but-unconfirmed matches wait for you to confirm. Anything else can be linked by searching Nexus (or pasting a URL) right in the app.
 - **GitHub mods** (e.g. RedHotTools): link a mod to its GitHub repository (or let the scan find the repo URL in the mod's files). Update checks use GitHub releases, and Update installs the release download. Native plugins also report their own DLL version.
 - **Browse Nexus**: trending, new and recently updated Cyberpunk 2077 mods, plus search, with pictures, summaries and per-file Install (Premium) or Mod Manager Download (free). "Open full Nexus site" opens nexusmods.com in your browser.
@@ -35,7 +35,7 @@ A companion app for Cyberpunk 2077 modding. It catalogs your mods, checks the co
 
 | Page | What it does |
 |---|---|
-| Overview | Available mod updates first (checked automatically when results are older than 6 hours), mod counts, problems that need attention, and **Generate mod list** (saved to Documents by default, with Open/Copy). |
+| Overview | Available mod updates first (Check now, or turn on checking at startup in Settings), mod counts, problems that need attention, and **Generate mod list** (saved to Documents by default, with Open/Copy). |
 | Mods | Search, filter by state/source/location, toggle mods, select several (checkbox or Ctrl+click) for bulk actions, and click a mod to see its files and Nexus link. |
 | Core Frameworks | Install state and version of RED4ext, Redscript, CET, ArchiveXL, TweakXL, Codeware and EquipmentEx, plus disabling them for vanilla testing. |
 | Logs | Framework logs with errors and warnings highlighted, and an errors-only filter. |
@@ -46,7 +46,15 @@ Disabled mods are moved to `Temporarily Disabled Mods` inside your game folder, 
 
 Requires Windows 10/11 with the Microsoft Edge WebView2 runtime (preinstalled on current Windows).
 
-**Nexus SSO:** "Log in with Nexus" needs an application slug issued by Nexus Mods. Once you have one, set `NEXUS_APP_SLUG` in `cp77mlt/nexus.py` and the button appears. Until then, personal API keys work.
+## Nexus Mods API use
+
+The tool follows the [Nexus Mods API Acceptable Use Policy](https://help.nexusmods.com/article/114-api-acceptable-use-policy):
+
+- **Sign-in:** OAuth 2.0 with PKCE (`cp77mlt/oauth.py`). The browser opens `users.nexusmods.com/oauth/authorize` and Nexus redirects to `http://127.0.0.1:51920/callback` on your PC. Tokens are stored encrypted with Windows DPAPI and refreshed automatically. Set `CLIENT_ID` in `cp77mlt/oauth.py` to the ID Nexus issues; until then, testing builds use a personal API key instead.
+- **Identification:** every request sends `Application-Name` and `Application-Version`.
+- **Only on user actions:** Nexus is contacted when you open the Nexus page, check for updates, find mods on Nexus, link, track, update or browse. Checking for updates at startup is an opt-in setting (off by default). Launching the tool makes no Nexus requests.
+- **No bulk downloads:** the tool never downloads Nexus's full mod list. Unmatched mods are looked up one at a time (MD5 search, then name search), and only the names of mods you looked up are kept locally.
+- **Caching and limits:** responses are cached on your PC; the tool reads the `X-RL-*` rate-limit headers and stops on HTTP 429.
 
 ## Notes
 
