@@ -38,6 +38,23 @@ def acquire_single_instance():
     return handle  # keep a reference for the process lifetime
 
 
+def own_http_port(preferred):
+    """The local port this app's screens are served from. pywebview puts every app with private_mode=False on
+    the same port (42001), so two pywebview apps open at once (this and Quantum, say) both show whichever one
+    started first. This app keeps its own port; if something else already has it, any free port does."""
+    import socket
+    for port in (preferred, 0):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            try:
+                s.bind(("127.0.0.1", port))
+                return s.getsockname()[1]
+            except OSError:
+                continue
+    return None
+
+
 def setup_logging() -> None:
     import logging
     from logging.handlers import RotatingFileHandler
@@ -94,7 +111,7 @@ def main() -> int:
     api.attach(window)
     winstate.Tracker(api._cfg, window, geo)
     debug = "--debug" in sys.argv
-    kwargs = {"debug": debug, "private_mode": False,
+    kwargs = {"debug": debug, "private_mode": False, "http_port": own_http_port(42201),
               "storage_path": os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
                                            "Cyberpunk2077ModListTool", "webview")}
     if os.path.exists(ICON_PATH):
